@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RESCENE 사진 출처 & 공유 가능 여부 확인기</title>
+    <title>RESCENE (리센느) 사진 출처 & 공유 가능 여부 확인기</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
@@ -62,7 +62,7 @@
               리센느 출처 파인더
               <span
                 class="text-xs px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-medium"
-                >플러스챗</span
+                >플러스챗 1차 오픈</span
               >
             </h1>
             <p class="text-xs text-slate-500 hidden sm:block">
@@ -149,6 +149,7 @@
               type="file"
               id="imageInput"
               accept="image/*"
+              multiple
               class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
             />
 
@@ -158,14 +159,14 @@
               <div
                 class="w-14 h-14 rounded-2xl bg-white shadow-sm border border-slate-200 flex items-center justify-center group-hover:scale-105 group-hover:text-rose-600 text-slate-500 transition-all"
               >
-                <i data-lucide="image-plus" class="w-7 h-7"></i>
+                <i data-lucide="images" class="w-7 h-7"></i>
               </div>
               <div>
                 <p class="text-sm font-semibold text-slate-800">
-                  클릭하여 사진 업로드 또는 파일 드래그 & 드롭
+                  클릭하여 사진 업로드 또는 파일 여러 장 드래그 & 드롭
                 </p>
                 <p class="text-xs text-slate-500 mt-1">
-                  클립보드 이미지 붙여넣기 (Ctrl + V / Cmd + V) 지원
+                  여러 장 동시 검사 및 클립보드 붙여넣기(Ctrl + V) 지원
                 </p>
               </div>
             </div>
@@ -173,7 +174,10 @@
         </div>
 
         <!-- Result Card (Hidden by default) -->
-        <div id="resultContainer" class="hidden transition-all duration-300">
+        <div
+          id="resultContainer"
+          class="hidden transition-all duration-300 space-y-4"
+        >
           <!-- Rendered dynamically via JS -->
         </div>
 
@@ -350,27 +354,109 @@
               </div>
             </div>
 
-            <!-- File upload for hash extraction -->
-            <div class="flex flex-col sm:flex-row items-center gap-4">
-              <div class="w-full">
-                <label class="block text-xs font-semibold text-slate-700 mb-1.5"
-                  >등록할 사진 파일</label
+            <!-- Multi-file drag & drop zone for batch DB registration -->
+            <div class="space-y-3">
+              <label class="block text-xs font-semibold text-slate-700">
+                등록할 사진 파일들 선택
+                <span class="text-indigo-600 font-normal"
+                  >(수십 장 동시 드래그 및 폴더 내 전체 선택 지원)</span
                 >
+              </label>
+
+              <div
+                id="adminDropZone"
+                class="border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-white hover:bg-indigo-50/30 rounded-xl p-5 text-center transition-all cursor-pointer relative group"
+              >
                 <input
                   type="file"
                   id="formImageFile"
                   accept="image/*"
-                  class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer border border-slate-300 bg-white rounded-lg"
+                  multiple
+                  class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                 />
-              </div>
-              <div class="w-full sm:w-auto self-end">
-                <button
-                  id="addDbEntryBtn"
-                  class="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 whitespace-nowrap"
+                <div
+                  class="flex flex-col items-center justify-center gap-2 pointer-events-none"
                 >
-                  <i data-lucide="plus" class="w-4 h-4"></i>
-                  DB에 해시 등록하기
-                </button>
+                  <div
+                    class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center"
+                  >
+                    <i data-lucide="folder-up" class="w-5 h-5"></i>
+                  </div>
+                  <p class="text-xs font-semibold text-slate-800">
+                    여기를 클릭해 파일들을 다중 선택(Ctrl/Cmd + 클릭 또는
+                    드래그)하거나 끌어다 놓으세요
+                  </p>
+                  <p class="text-[11px] text-slate-400">
+                    JPG, PNG, WEBP 등 다중 이미지 파일 지원
+                  </p>
+                </div>
+              </div>
+
+              <!-- Staged Photos Preview Area (Appears when files are selected) -->
+              <div
+                id="stagedPhotosBox"
+                class="hidden bg-white border border-slate-200 rounded-xl p-3.5 space-y-3"
+              >
+                <div class="flex items-center justify-between">
+                  <span
+                    class="text-xs font-bold text-slate-700 flex items-center gap-1.5"
+                  >
+                    <i
+                      data-lucide="check-circle-2"
+                      class="w-3.5 h-3.5 text-indigo-600"
+                    ></i>
+                    등록 대기 중인 사진 목록
+                    <span
+                      id="stagedCountBadge"
+                      class="bg-indigo-100 text-indigo-700 text-[11px] px-2 py-0.5 rounded-full font-bold"
+                      >0장</span
+                    >
+                  </span>
+                  <button
+                    type="button"
+                    id="clearStagedBtn"
+                    class="text-[11px] text-slate-400 hover:text-rose-500 font-medium transition-colors"
+                  >
+                    목록 비우기
+                  </button>
+                </div>
+
+                <!-- Thumbnail Gallery -->
+                <div
+                  id="stagedGallery"
+                  class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 max-h-48 overflow-y-auto custom-scrollbar p-1"
+                >
+                  <!-- Injected via JS -->
+                </div>
+
+                <!-- Batch Upload Progress Bar -->
+                <div id="batchProgressBarBox" class="hidden space-y-1 pt-1">
+                  <div
+                    class="flex justify-between text-[11px] text-slate-600 font-medium"
+                  >
+                    <span id="progressText">해시 계산 중...</span>
+                    <span id="progressPercent">0%</span>
+                  </div>
+                  <div
+                    class="w-full bg-slate-100 rounded-full h-2 overflow-hidden"
+                  >
+                    <div
+                      id="progressBarFill"
+                      class="bg-indigo-600 h-2 rounded-full transition-all duration-150"
+                      style="width: 0%"
+                    ></div>
+                  </div>
+                </div>
+
+                <div class="pt-2 flex justify-end">
+                  <button
+                    id="addDbEntryBtn"
+                    class="w-full sm:w-auto px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2"
+                  >
+                    <i data-lucide="database-zap" class="w-4 h-4"></i>
+                    <span id="addBtnText">대기 중인 사진 전체 DB 등록하기</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -603,6 +689,7 @@
       // Local state
       let photoDatabase = [];
       const HAMMING_THRESHOLD = 10; // Up to 10-bit difference matches compression/aspect ratio variations
+      let stagedAdminFiles = []; // Staged files for batch registration
 
       // Default admin password (you can change this to any passcode you like)
       const ADMIN_PASSCODE = "ilivyou";
@@ -905,98 +992,456 @@
       navUserBtn.addEventListener("click", switchToUserView);
       navAdminBtn.addEventListener("click", switchToAdminView);
 
-      // Drag and Drop Search
-      const dropZone = document.getElementById("dropZone");
-      const imageInput = document.getElementById("imageInput");
-
-      imageInput.addEventListener("change", (e) => {
-        if (e.target.files && e.target.files[0]) {
-          analyzeUploadedImage(e.target.files[0]);
-        }
-      });
-
-      ["dragenter", "dragover"].forEach((name) => {
-        dropZone.addEventListener(name, (e) => {
-          e.preventDefault();
-          dropZone.classList.add("border-rose-500", "bg-rose-50/50");
-        });
-      });
-
-      ["dragleave", "drop"].forEach((name) => {
-        dropZone.addEventListener(name, (e) => {
-          e.preventDefault();
-          dropZone.classList.remove("border-rose-500", "bg-rose-50/50");
-        });
-      });
-
-      dropZone.addEventListener("drop", (e) => {
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-          analyzeUploadedImage(e.dataTransfer.files[0]);
-        }
-      });
-
-      // Paste from clipboard
-      window.addEventListener("paste", (e) => {
-        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
-        for (const item of items) {
-          if (item.kind === "file" && item.type.startsWith("image/")) {
-            const blob = item.getAsFile();
-            analyzeUploadedImage(blob);
-            showToast("클립보드에서 이미지를 불러왔습니다.", "clipboard-check");
-            break;
-          }
-        }
-      });
-
-      // Add entry in Admin View
-      const addDbEntryBtn = document.getElementById("addDbEntryBtn");
+      // ==========================================
+      // Multi-File Staging & Batch Registration
+      // ==========================================
       const formImageFile = document.getElementById("formImageFile");
+      const adminDropZone = document.getElementById("adminDropZone");
+      const stagedPhotosBox = document.getElementById("stagedPhotosBox");
+      const stagedGallery = document.getElementById("stagedGallery");
+      const stagedCountBadge = document.getElementById("stagedCountBadge");
+      const clearStagedBtn = document.getElementById("clearStagedBtn");
+      const addDbEntryBtn = document.getElementById("addDbEntryBtn");
+      const addBtnText = document.getElementById("addBtnText");
+      const batchProgressBarBox = document.getElementById(
+        "batchProgressBarBox"
+      );
+      const progressBarFill = document.getElementById("progressBarFill");
+      const progressText = document.getElementById("progressText");
+      const progressPercent = document.getElementById("progressPercent");
 
-      addDbEntryBtn.addEventListener("click", async () => {
-        if (!formImageFile.files || !formImageFile.files[0]) {
-          showToast("등록할 사진 파일을 선택해 주세요!", "alert-circle");
+      function handleAdminFilesSelected(files) {
+        if (!files || files.length === 0) return;
+        const validImages = Array.from(files).filter((f) =>
+          f.type.startsWith("image/")
+        );
+        if (validImages.length === 0) {
+          showToast("이미지 파일만 등록할 수 있습니다.", "alert-circle");
+          return;
+        }
+        stagedAdminFiles = stagedAdminFiles.concat(validImages);
+        renderStagedGallery();
+        showToast(
+          `${validImages.length}장의 사진이 대기 목록에 추가되었습니다.`,
+          "images"
+        );
+      }
+
+      function renderStagedGallery() {
+        if (stagedAdminFiles.length === 0) {
+          stagedPhotosBox.classList.add("hidden");
+          stagedGallery.innerHTML = "";
+          stagedCountBadge.textContent = "0장";
           return;
         }
 
-        const file = formImageFile.files[0];
+        stagedPhotosBox.classList.remove("hidden");
+        stagedCountBadge.textContent = `${stagedAdminFiles.length}장`;
+        stagedGallery.innerHTML = "";
+
+        stagedAdminFiles.forEach((file, index) => {
+          const itemDiv = document.createElement("div");
+          itemDiv.className =
+            "relative group rounded-lg overflow-hidden border border-slate-200 aspect-square bg-slate-100 flex items-center justify-center";
+
+          const img = document.createElement("img");
+          img.className = "w-full h-full object-cover";
+          img.src = URL.createObjectURL(file);
+          img.alt = file.name;
+
+          const removeBtn = document.createElement("button");
+          removeBtn.type = "button";
+          removeBtn.className =
+            "absolute top-1 right-1 w-5 h-5 bg-black/70 hover:bg-rose-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[10px]";
+          removeBtn.innerHTML = "×";
+          removeBtn.onclick = (e) => {
+            e.stopPropagation();
+            stagedAdminFiles.splice(index, 1);
+            renderStagedGallery();
+          };
+
+          itemDiv.appendChild(img);
+          itemDiv.appendChild(removeBtn);
+          stagedGallery.appendChild(itemDiv);
+        });
+
+        lucide.createIcons();
+      }
+
+      formImageFile.addEventListener("change", (e) => {
+        handleAdminFilesSelected(e.target.files);
+        formImageFile.value = "";
+      });
+
+      clearStagedBtn.addEventListener("click", () => {
+        stagedAdminFiles = [];
+        renderStagedGallery();
+      });
+
+      // Batch Registration Process
+      addDbEntryBtn.addEventListener("click", async () => {
+        if (stagedAdminFiles.length === 0) {
+          showToast(
+            "대기 중인 사진이 없습니다. 먼저 사진을 선택해 주세요.",
+            "alert-circle"
+          );
+          return;
+        }
+
         const platform = document.getElementById("formPlatform").value;
         const isPaid = document.getElementById("formIsPaid").value === "true";
         const member = document.getElementById("formMember").value;
         const date = document.getElementById("formDate").value;
-        const note = document.getElementById("formNote").value;
+        const baseNote = document.getElementById("formNote").value.trim();
 
-        try {
-          const image = new Image();
+        addDbEntryBtn.disabled = true;
+        batchProgressBarBox.classList.remove("hidden");
+
+        const total = stagedAdminFiles.length;
+        let successCount = 0;
+
+        for (let i = 0; i < total; i++) {
+          const file = stagedAdminFiles[i];
+          const currentPercent = Math.round(((i + 1) / total) * 100);
+
+          progressBarFill.style.width = `${currentPercent}%`;
+          progressPercent.textContent = `${currentPercent}%`;
+          progressText.textContent = `디지털 지문 추출 중... (${
+            i + 1
+          }/${total})`;
+          addBtnText.textContent = `등록 중 (${i + 1}/${total})`;
+
+          try {
+            const dataUrl = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = reject;
+              reader.readAsDataURL(file);
+            });
+
+            const img = await new Promise((resolve, reject) => {
+              const image = new Image();
+              image.onload = () => resolve(image);
+              image.onerror = reject;
+              image.src = dataUrl;
+            });
+
+            const hash = await computeDHash(img);
+            const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+            const noteText = baseNote
+              ? `${baseNote} (${fileNameWithoutExt})`
+              : fileNameWithoutExt;
+
+            photoDatabase.unshift({
+              id:
+                "rc_" +
+                Date.now() +
+                "_" +
+                Math.random().toString(36).substr(2, 5),
+              hash,
+              platform,
+              isPaid,
+              member,
+              date,
+              note: noteText,
+            });
+            successCount++;
+          } catch (err) {
+            console.error("Error processing file", file.name, err);
+          }
+        }
+
+        saveDatabaseToStorage();
+        stagedAdminFiles = [];
+        renderStagedGallery();
+        document.getElementById("formNote").value = "";
+
+        batchProgressBarBox.classList.add("hidden");
+        progressBarFill.style.width = "0%";
+        addDbEntryBtn.disabled = false;
+        addBtnText.textContent = "대기 중인 사진 전체 DB 등록하기";
+
+        showToast(
+          `${successCount}장의 사진이 성공적으로 등록되었습니다! 상단의 [JSON 내보내기]를 눌러 저장하세요.`,
+          "check-check"
+        );
+      });
+
+      // ==========================================
+      // User Photo Verification (Multi-photo supported)
+      // ==========================================
+      const imageInput = document.getElementById("imageInput");
+      const dropZone = document.getElementById("dropZone");
+      const resultContainer = document.getElementById("resultContainer");
+
+      function checkSingleImage(file) {
+        return new Promise((resolve) => {
           const reader = new FileReader();
+          reader.onload = async (e) => {
+            const dataUrl = e.target.result;
+            const img = new Image();
+            img.onload = async () => {
+              try {
+                const hash = await computeDHash(img);
+                let bestMatch = null;
+                let minDistance = 64;
 
-          reader.onload = function (e) {
-            image.src = e.target.result;
-            image.onload = async function () {
-              const hash = await computeDHash(image);
+                for (const entry of photoDatabase) {
+                  const dist = getHammingDistance(hash, entry.hash);
+                  if (dist < minDistance) {
+                    minDistance = dist;
+                    bestMatch = entry;
+                  }
+                }
 
-              const newEntry = {
-                id: "rc_" + Date.now(),
-                hash,
-                platform,
-                isPaid,
-                member,
-                date,
-                note,
-              };
-
-              photoDatabase.unshift(newEntry);
-              saveDatabaseToStorage();
-
-              // Reset input
-              formImageFile.value = "";
-              document.getElementById("formNote").value = "";
-              showToast("해시가 성공적으로 등록되었습니다!", "check-circle");
+                const isMatch = bestMatch && minDistance <= HAMMING_THRESHOLD;
+                resolve({
+                  file,
+                  dataUrl,
+                  hash,
+                  isMatch,
+                  bestMatch,
+                  distance: minDistance,
+                });
+              } catch (err) {
+                resolve({ file, dataUrl, error: true });
+              }
             };
+            img.src = dataUrl;
           };
-
           reader.readAsDataURL(file);
-        } catch (err) {
-          showToast("해시 생성 중 오류가 발생했습니다.", "alert-triangle");
+        });
+      }
+
+      async function handleUserFiles(files) {
+        const imageFiles = Array.from(files).filter((f) =>
+          f.type.startsWith("image/")
+        );
+        if (imageFiles.length === 0) {
+          showToast("이미지 파일만 검사할 수 있습니다.", "alert-circle");
+          return;
+        }
+
+        resultContainer.classList.remove("hidden");
+        resultContainer.innerHTML = `
+        <div class="bg-white border border-slate-200 rounded-2xl p-6 text-center shadow-sm">
+          <div class="inline-block animate-spin text-rose-500 mb-2">
+            <i data-lucide="loader-2" class="w-6 h-6"></i>
+          </div>
+          <p class="text-xs font-semibold text-slate-700">${imageFiles.length}장의 사진 출처를 판별하고 있습니다...</p>
+        </div>
+      `;
+        lucide.createIcons();
+
+        const results = await Promise.all(
+          imageFiles.map((f) => checkSingleImage(f))
+        );
+        renderUserResults(results);
+      }
+
+      function renderUserResults(results) {
+        resultContainer.innerHTML = "";
+
+        const summaryCard = document.createElement("div");
+        summaryCard.className =
+          "flex items-center justify-between bg-white border border-slate-200 rounded-2xl p-4 shadow-sm text-xs";
+        summaryCard.innerHTML = `
+        <div class="flex items-center gap-2">
+          <i data-lucide="layers" class="w-4 h-4 text-slate-500"></i>
+          <span class="font-bold text-slate-800">총 ${results.length}장의 사진 검사 완료</span>
+        </div>
+        <button id="clearResultsBtn" class="text-slate-400 hover:text-slate-700 font-medium">검사 결과 닫기</button>
+      `;
+        resultContainer.appendChild(summaryCard);
+
+        document
+          .getElementById("clearResultsBtn")
+          .addEventListener("click", () => {
+            resultContainer.classList.add("hidden");
+            resultContainer.innerHTML = "";
+          });
+
+        results.forEach((res) => {
+          const card = document.createElement("div");
+          card.className =
+            "bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden p-5 flex flex-col md:flex-row gap-5 items-center";
+
+          if (res.isMatch && res.bestMatch.isPaid) {
+            // PAID PHOTO: Warning
+            card.classList.add("border-rose-300", "bg-rose-50/20");
+            card.innerHTML = `
+            <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border border-rose-200">
+              <img src="${res.dataUrl}" class="w-full h-full object-cover" />
+            </div>
+            <div class="flex-1 space-y-2 text-left w-full">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-rose-600 text-white flex items-center gap-1 shadow-sm">
+                  <i data-lucide="shield-alert" class="w-3.5 h-3.5"></i>
+                  공유 금지 (유료 콘텐츠)
+                </span>
+                <span class="text-xs font-semibold text-rose-800">${escapeHtml(
+                  res.bestMatch.platform
+                )}</span>
+                <span class="text-xs text-slate-400">일치도 ${(
+                  100 -
+                  (res.distance / 64) * 100
+                ).toFixed(0)}%</span>
+              </div>
+              <p class="text-xs font-bold text-rose-900 leading-snug">
+                🚨 이 사진은 외부 SNS(트위터, 인스타, 커뮤니티 등)에 배포할 수 없습니다.
+              </p>
+              <div class="bg-white/80 border border-rose-100 rounded-lg p-2.5 text-xs text-slate-600 space-y-0.5">
+                <div><strong>멤버:</strong> ${escapeHtml(
+                  res.bestMatch.member || "-"
+                )}</div>
+                ${
+                  res.bestMatch.date
+                    ? `<div><strong>일자:</strong> ${res.bestMatch.date}</div>`
+                    : ""
+                }
+                ${
+                  res.bestMatch.note
+                    ? `<div><strong>상세:</strong> ${escapeHtml(
+                        res.bestMatch.note
+                      )}</div>`
+                    : ""
+                }
+              </div>
+            </div>
+          `;
+          } else if (res.isMatch && !res.bestMatch.isPaid) {
+            // FREE/PUBLIC PHOTO: Allowed
+            card.classList.add("border-emerald-300", "bg-emerald-50/20");
+            card.innerHTML = `
+            <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border border-emerald-200">
+              <img src="${res.dataUrl}" class="w-full h-full object-cover" />
+            </div>
+            <div class="flex-1 space-y-2 text-left w-full">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-600 text-white flex items-center gap-1 shadow-sm">
+                  <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+                  공유 가능 (공식 공개)
+                </span>
+                <span class="text-xs font-semibold text-emerald-800">${escapeHtml(
+                  res.bestMatch.platform
+                )}</span>
+                <span class="text-xs text-slate-400">일치도 ${(
+                  100 -
+                  (res.distance / 64) * 100
+                ).toFixed(0)}%</span>
+              </div>
+              <p class="text-xs font-bold text-emerald-900 leading-snug">
+                ✅ 자유롭게 팬 활동 및 SNS 공유가 가능한 사진입니다.
+              </p>
+              <div class="bg-white/80 border border-emerald-100 rounded-lg p-2.5 text-xs text-slate-600 space-y-0.5">
+                <div><strong>멤버:</strong> ${escapeHtml(
+                  res.bestMatch.member || "-"
+                )}</div>
+                ${
+                  res.bestMatch.date
+                    ? `<div><strong>일자:</strong> ${res.bestMatch.date}</div>`
+                    : ""
+                }
+                ${
+                  res.bestMatch.note
+                    ? `<div><strong>상세:</strong> ${escapeHtml(
+                        res.bestMatch.note
+                      )}</div>`
+                    : ""
+                }
+              </div>
+            </div>
+          `;
+          } else {
+            // UNKNOWN / NOT FOUND
+            card.innerHTML = `
+            <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border border-slate-200">
+              <img src="${res.dataUrl}" class="w-full h-full object-cover" />
+            </div>
+            <div class="flex-1 space-y-2 text-left w-full">
+              <div class="flex items-center gap-2">
+                <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 flex items-center gap-1 border border-slate-200">
+                  <i data-lucide="help-circle" class="w-3.5 h-3.5 text-slate-500"></i>
+                  DB 미등록 사진
+                </span>
+                <span class="text-xs text-slate-400">파일: ${escapeHtml(
+                  res.file.name
+                )}</span>
+              </div>
+              <p class="text-xs text-slate-600 leading-relaxed">
+                현재 등록된 플러스챗 데이터베이스에서 일치하는 사진을 찾지 못했습니다. 공식 트위터 미디어이거나 아직 등록되지 않은 프챗 미디어일 수 있으니 공유 전 한 번 더 출처를 확인해 주세요.
+              </p>
+            </div>
+          `;
+          }
+
+          resultContainer.appendChild(card);
+        });
+
+        lucide.createIcons();
+      }
+
+      imageInput.addEventListener("change", (e) => {
+        handleUserFiles(e.target.files);
+        imageInput.value = "";
+      });
+
+      // Paste event support (Ctrl + V)
+      window.addEventListener("paste", (e) => {
+        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+        const pastedFiles = [];
+        for (const item of items) {
+          if (item.type.indexOf("image") !== -1) {
+            pastedFiles.push(item.getAsFile());
+          }
+        }
+        if (pastedFiles.length > 0) {
+          if (
+            !document.getElementById("adminView").classList.contains("hidden")
+          ) {
+            handleAdminFilesSelected(pastedFiles);
+          } else {
+            handleUserFiles(pastedFiles);
+          }
+        }
+      });
+
+      // Drag and Drop highlighting helper
+      [dropZone, adminDropZone].forEach((zone) => {
+        if (!zone) return;
+        ["dragenter", "dragover"].forEach((eventName) => {
+          zone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            zone.classList.add(
+              "scale-[1.01]",
+              "border-rose-400",
+              "border-indigo-400"
+            );
+          });
+        });
+        ["dragleave", "drop"].forEach((eventName) => {
+          zone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            zone.classList.remove(
+              "scale-[1.01]",
+              "border-rose-400",
+              "border-indigo-400"
+            );
+          });
+        });
+      });
+
+      adminDropZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        if (e.dataTransfer && e.dataTransfer.files) {
+          handleAdminFilesSelected(e.dataTransfer.files);
+        }
+      });
+
+      dropZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        if (e.dataTransfer && e.dataTransfer.files) {
+          handleUserFiles(e.dataTransfer.files);
         }
       });
 
