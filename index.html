@@ -162,6 +162,26 @@
             </p>
           </div>
 
+          <!-- Strictness Control Bar -->
+          <div class="flex items-center justify-end mb-3">
+            <div
+              class="inline-flex items-center gap-2 bg-slate-100/90 px-3 py-1.5 rounded-xl text-xs text-slate-600 border border-slate-200 shadow-xs"
+            >
+              <i data-lucide="sliders" class="w-3.5 h-3.5 text-rose-500"></i>
+              <span class="font-medium">판별 기준:</span>
+              <select
+                id="strictnessSelect"
+                class="bg-white border border-slate-200 rounded-lg px-2 py-0.5 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-rose-400 cursor-pointer"
+              >
+                <option value="5">매우 엄격 (92% 이상 일치)</option>
+                <option value="6" selected>
+                  엄격 (90% 이상 일치, 기본 권장)
+                </option>
+                <option value="8">보통 (87% 이상 일치)</option>
+              </select>
+            </div>
+          </div>
+
           <!-- Dropzone -->
           <div
             id="dropZone"
@@ -771,7 +791,7 @@
 
       // Local state
       let photoDatabase = [];
-      const HAMMING_THRESHOLD = 12; // 12-bit threshold (tolerates mobile recompression and gamut shifts)
+      let selectedThreshold = 6; // 6-bit threshold: ~90.6% 이상 일치해야 동일 사진으로 판정 (81% 오판정 원천 차단)
       let stagedAdminFiles = []; // Staged files for batch registration
 
       // Default admin password (you can change this to any passcode you like)
@@ -1307,6 +1327,13 @@
         "dropZoneLoadingTitle"
       );
       const resultContainer = document.getElementById("resultContainer");
+      const strictnessSelect = document.getElementById("strictnessSelect");
+
+      if (strictnessSelect) {
+        strictnessSelect.addEventListener("change", (e) => {
+          selectedThreshold = parseInt(e.target.value, 10);
+        });
+      }
 
       function checkSingleImage(file) {
         return new Promise(async (resolve) => {
@@ -1325,7 +1352,10 @@
             }
 
             const previewUrl = URL.createObjectURL(file);
-            const isMatch = bestMatch && minDistance <= HAMMING_THRESHOLD;
+            // 선택된 엄격도 기준(기본: 6비트 이하 = 90.6% 이상)만 동일 사진으로 인정
+            const isMatch = Boolean(
+              bestMatch && minDistance <= selectedThreshold
+            );
             resolve({
               file,
               dataUrl: previewUrl,
@@ -1550,7 +1580,12 @@
           } else {
             // UNKNOWN / NOT FOUND
             const similarityRate = (100 - (res.distance / 64) * 100).toFixed(0);
-            const hasCloseProximity = res.bestMatch && res.distance <= 11; // 82% ~ 88% 수준의 근접한 사진이 DB에 있는 경우
+            // 유사 셀카 감지: 동일 판정에는 미달하지만(90% 미만), 80%~89% 수준으로 비슷한 사진이 DB에 있는 경우
+            const hasCloseProximity = Boolean(
+              res.bestMatch &&
+                res.distance > selectedThreshold &&
+                res.distance <= 12
+            );
 
             card.innerHTML = `
             <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border border-slate-200 shadow-sm mx-auto sm:mx-0">
@@ -1575,11 +1610,11 @@
                 <div class="bg-amber-50 border border-amber-200/80 rounded-xl p-2.5 text-[11px] text-amber-900 flex items-start gap-2 mt-1.5">
                   <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5"></i>
                   <div>
-                    <strong>유사 컷 주의:</strong> DB에 일치율 <strong>${similarityRate}%</strong>인 유사한 사진(${escapeHtml(
+                    <strong>유사 컷 주의 (일치율 ${similarityRate}%):</strong> DB에 구도가 매우 유사한 사진(${escapeHtml(
                       res.bestMatch.member || "멤버"
                     )} / ${escapeHtml(
                       res.bestMatch.platform
-                    )})이 있습니다. 동일 사진은 아니지만 같은 착장이나 연속 촬영된 셀카일 가능성이 있으니 출처를 다시 확인해 보세요.
+                    )})이 있습니다. 동일 사진으로 단정할 수 없으나, 같은 착장이거나 연속 촬영된 셀카일 가능성이 있으니 출처를 다시 확인해 보세요.
                   </div>
                 </div>
               `
