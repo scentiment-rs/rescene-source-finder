@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RESCENE (리센느) 사진 출처 & 공유 가능 여부 확인기</title>
+    <title>리센느 플챗 멤버십 사진 판별기</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
@@ -86,15 +86,10 @@
             <h1
               class="font-bold text-slate-900 leading-tight text-base sm:text-lg flex items-center gap-1.5"
             >
-              리센느 출처 파인더
-              <span
-                class="text-xs px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-medium"
-                >플러스챗 1차 오픈</span
-              >
+              리센느 플챗 멤버십 사진 판별기
+              <!-- <span class="text-xs px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-medium">플러스챗 1차 오픈</span> -->
             </h1>
-            <p class="text-xs text-slate-500 hidden sm:block">
-              공식 소셜 및 유료 서비스(Plus Chat) 콘텐츠 공유 규정 안내
-            </p>
+            <!-- <p class="text-xs text-slate-500 hidden sm:block">공식 소셜 및 유료 서비스(Plus Chat) 콘텐츠 공유 규정 안내</p> -->
           </div>
         </div>
 
@@ -399,7 +394,7 @@
                 <input
                   type="text"
                   id="formNote"
-                  placeholder="예: 240401 프챗 셀카, 착장 설명 등"
+                  placeholder="예: 240401 플챗 셀카, 착장 설명 등"
                   class="w-full text-xs bg-white border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
               </div>
@@ -1554,12 +1549,15 @@
           `;
           } else {
             // UNKNOWN / NOT FOUND
+            const similarityRate = (100 - (res.distance / 64) * 100).toFixed(0);
+            const hasCloseProximity = res.bestMatch && res.distance <= 11; // 82% ~ 88% 수준의 근접한 사진이 DB에 있는 경우
+
             card.innerHTML = `
             <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border border-slate-200 shadow-sm mx-auto sm:mx-0">
               <img src="${res.dataUrl}" class="w-full h-full object-cover" />
             </div>
             <div class="flex-1 space-y-2 text-left w-full">
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 flex-wrap">
                 <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-200 text-slate-700 flex items-center gap-1">
                   <i data-lucide="help-circle" class="w-3.5 h-3.5 text-slate-500"></i>
                   DB 미등록 사진
@@ -1569,8 +1567,24 @@
                 )}</span>
               </div>
               <p class="text-xs text-slate-600 leading-relaxed">
-                현재 등록된 플러스챗 데이터베이스에서 일치하는 사진을 찾지 못했습니다. 공식 트위터 미디어이거나 아직 등록되지 않은 프챗 미디어일 수 있으니 공유 전 한 번 더 출처를 확인해 주세요.
+                현재 등록된 데이터베이스에서 일치하는 사진을 찾지 못했습니다. 공식 계정(X, Instagram등) 미디어이거나 아직 등록되지 않은 플챗 미디어일 수 있으니 공유 전 한 번 더 출처를 확인해 주세요.
               </p>
+              ${
+                hasCloseProximity
+                  ? `
+                <div class="bg-amber-50 border border-amber-200/80 rounded-xl p-2.5 text-[11px] text-amber-900 flex items-start gap-2 mt-1.5">
+                  <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5"></i>
+                  <div>
+                    <strong>유사 컷 주의:</strong> DB에 일치율 <strong>${similarityRate}%</strong>인 유사한 사진(${escapeHtml(
+                      res.bestMatch.member || "멤버"
+                    )} / ${escapeHtml(
+                      res.bestMatch.platform
+                    )})이 있습니다. 동일 사진은 아니지만 같은 착장이나 연속 촬영된 셀카일 가능성이 있으니 출처를 다시 확인해 보세요.
+                  </div>
+                </div>
+              `
+                  : ""
+              }
             </div>
           `;
           }
