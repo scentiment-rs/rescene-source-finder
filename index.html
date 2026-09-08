@@ -164,19 +164,12 @@
 
           <!-- Strictness Control Bar -->
           <div class="flex items-center justify-end mb-3">
-            <div
-              class="inline-flex items-center gap-2 bg-slate-100/90 px-3 py-1.5 rounded-xl text-xs text-slate-600 border border-slate-200 shadow-xs"
-            >
+            <div class="inline-flex items-center gap-2 bg-slate-100/90 px-3 py-1.5 rounded-xl text-xs text-slate-600 border border-slate-200 shadow-xs">
               <i data-lucide="sliders" class="w-3.5 h-3.5 text-rose-500"></i>
               <span class="font-medium">판별 기준:</span>
-              <select
-                id="strictnessSelect"
-                class="bg-white border border-slate-200 rounded-lg px-2 py-0.5 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-rose-400 cursor-pointer"
-              >
+              <select id="strictnessSelect" class="bg-white border border-slate-200 rounded-lg px-2 py-0.5 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-rose-400 cursor-pointer">
                 <option value="5">매우 엄격 (92% 이상 일치)</option>
-                <option value="6" selected>
-                  엄격 (90% 이상 일치, 기본 권장)
-                </option>
+                <option value="6" selected>엄격 (90% 이상 일치, 기본 권장)</option>
                 <option value="8">보통 (87% 이상 일치)</option>
               </select>
             </div>
@@ -380,12 +373,13 @@
 
               <div>
                 <label class="block text-xs font-semibold text-slate-700 mb-1.5"
-                  >관련 멤버</label
+                  >관련 멤버 (선택)</label
                 >
                 <select
                   id="formMember"
                   class="w-full text-xs bg-white border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
+                  <option value="" selected>선택 안 함 (미지정)</option>
                   <option value="전체/단체">전체 / 단체</option>
                   <option value="원이">원이 (Woni)</option>
                   <option value="리브">리브 (Liv)</option>
@@ -422,12 +416,30 @@
 
             <!-- Multi-file drag & drop zone for batch DB registration -->
             <div class="space-y-3">
-              <label class="block text-xs font-semibold text-slate-700">
-                등록할 사진 파일들 선택
-                <span class="text-indigo-600 font-normal"
-                  >(수십 장 동시 드래그 및 폴더 내 전체 선택 지원)</span
+              <div class="flex items-center justify-between">
+                <label class="block text-xs font-semibold text-slate-700">
+                  등록할 사진 파일들 선택
+                  <span class="text-indigo-600 font-normal"
+                    >(수십~수백 장 동시 드래그 및 폴더 통째로 선택 지원)</span
+                  >
+                </label>
+                <!-- Folder Select Button -->
+                <label
+                  class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
+                  title="폴더를 지정하면 하위 사진들을 한 번에 불러옵니다"
                 >
-              </label>
+                  <i data-lucide="folder-search" class="w-3.5 h-3.5"></i>
+                  폴더 통째로 선택
+                  <input
+                    type="file"
+                    id="formFolderInput"
+                    webkitdirectory
+                    directory
+                    multiple
+                    class="hidden"
+                  />
+                </label>
+              </div>
 
               <div
                 id="adminDropZone"
@@ -861,63 +873,60 @@
           "px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1.5";
       }
 
-      // Generate dHash (Difference Hash) from Image element or DataURL
-      // Uses 2-stage downscaling + explicit sRGB to ensure identical results across iOS Safari and PC Chrome
+      // Robust Block-Mean Structural Perceptual Hash
+      // Solves cross-platform GPU shader rounding variance between PC and Mobile
+      // Immune to flat low-contrast backgrounds (tents, monochrome walls, solid fabrics)
       function computeDHash(imageElement) {
         return new Promise((resolve, reject) => {
           try {
-            // Stage 1: Downscale to intermediate size (72x64) with high-quality smoothing
-            // This forces WebKit (Safari) to perform area-averaging instead of nearest-neighbor subsampling
-            const stepCanvas = document.createElement("canvas");
-            stepCanvas.width = 72;
-            stepCanvas.height = 64;
-            const stepCtx = stepCanvas.getContext("2d", {
-              willReadFrequently: true,
-              colorSpace: "srgb",
-            });
-
-            if (stepCtx) {
-              stepCtx.imageSmoothingEnabled = true;
-              stepCtx.imageSmoothingQuality = "high";
-              stepCtx.drawImage(imageElement, 0, 0, 72, 64);
+            // Draw to a standardized 32x32 canvas
+            const canvas = document.createElement("canvas");
+            canvas.width = 32;
+            canvas.height = 32;
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            if (!ctx) {
+              return reject(new Error("Canvas context 생성 실패"));
             }
 
-            // Stage 2: Downscale from 72x64 to 9x8
-            const canvas = document.getElementById("hashCanvas");
-            const ctx = canvas.getContext("2d", {
-              willReadFrequently: true,
-              colorSpace: "srgb",
-            });
-
-            canvas.width = 9;
-            canvas.height = 8;
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = "high";
+            ctx.drawImage(imageElement, 0, 0, 32, 32);
 
-            // Draw from intermediate canvas (or fallback directly to imageElement if stepCtx failed)
-            ctx.drawImage(stepCtx ? stepCanvas : imageElement, 0, 0, 9, 8);
-            const imgData = ctx.getImageData(0, 0, 9, 8).data;
+            const imgData = ctx.getImageData(0, 0, 32, 32).data;
 
-            // Convert to Grayscale values (9 cols x 8 rows)
-            const grays = [];
-            for (let i = 0; i < imgData.length; i += 4) {
-              // Standard luminance weighting
-              const gray = Math.round(
-                imgData[i] * 0.299 +
-                  imgData[i + 1] * 0.587 +
-                  imgData[i + 2] * 0.114
-              );
-              grays.push(gray);
+            // Compute 8x8 block averages in pure JavaScript (each block is 4x4 pixels)
+            // Mathematical CPU averaging ensures identical results across iOS Safari, Android, and PC Chrome
+            const blocks = [];
+            let totalSum = 0;
+
+            for (let by = 0; by < 8; by++) {
+              for (let bx = 0; bx < 8; bx++) {
+                let blockSum = 0;
+                for (let py = 0; py < 4; py++) {
+                  for (let px = 0; px < 4; px++) {
+                    const x = bx * 4 + px;
+                    const y = by * 4 + py;
+                    const idx = (y * 32 + x) * 4;
+                    // Standard Rec. 601 Luma
+                    const luma =
+                      imgData[idx] * 0.299 +
+                      imgData[idx + 1] * 0.587 +
+                      imgData[idx + 2] * 0.114;
+                    blockSum += luma;
+                  }
+                }
+                const blockAvg = blockSum / 16;
+                blocks.push(blockAvg);
+                totalSum += blockAvg;
+              }
             }
 
-            // Build 64-bit binary string by comparing pixel(x, y) > pixel(x+1, y)
+            const globalAvg = totalSum / 64;
+
+            // Build 64-bit binary string based on global structural energy
             let binaryString = "";
-            for (let y = 0; y < 8; y++) {
-              for (let x = 0; x < 8; x++) {
-                const left = grays[y * 9 + x];
-                const right = grays[y * 9 + (x + 1)];
-                binaryString += left > right ? "1" : "0";
-              }
+            for (let i = 0; i < 64; i++) {
+              binaryString += blocks[i] >= globalAvg ? "1" : "0";
             }
 
             // Convert 64-bit binary to 16-character hexadecimal hash
@@ -1143,6 +1152,7 @@
       const clearStagedBtn = document.getElementById("clearStagedBtn");
       const addDbEntryBtn = document.getElementById("addDbEntryBtn");
       const addBtnText = document.getElementById("addBtnText");
+      const formFolderInput = document.getElementById("formFolderInput");
       const batchProgressBarBox = document.getElementById(
         "batchProgressBarBox"
       );
@@ -1212,6 +1222,13 @@
         handleAdminFilesSelected(e.target.files);
         formImageFile.value = "";
       });
+
+      if (formFolderInput) {
+        formFolderInput.addEventListener("change", (e) => {
+          handleAdminFilesSelected(e.target.files);
+          formFolderInput.value = "";
+        });
+      }
 
       clearStagedBtn.addEventListener("click", () => {
         stagedAdminFiles = [];
@@ -1353,9 +1370,7 @@
 
             const previewUrl = URL.createObjectURL(file);
             // 선택된 엄격도 기준(기본: 6비트 이하 = 90.6% 이상)만 동일 사진으로 인정
-            const isMatch = Boolean(
-              bestMatch && minDistance <= selectedThreshold
-            );
+            const isMatch = Boolean(bestMatch && minDistance <= selectedThreshold);
             resolve({
               file,
               dataUrl: previewUrl,
@@ -1516,9 +1531,13 @@
                 🚨 이 사진은 외부 SNS(트위터, 인스타, 커뮤니티 등)에 배포할 수 없습니다.
               </p>
               <div class="bg-white/90 border border-rose-100 rounded-xl p-3 text-xs text-slate-700 space-y-1 shadow-xs">
-                <div><span class="text-slate-400 font-medium mr-1.5">멤버:</span><strong>${escapeHtml(
-                  res.bestMatch.member || "-"
-                )}</strong></div>
+                ${
+                  res.bestMatch.member
+                    ? `<div><span class="text-slate-400 font-medium mr-1.5">멤버:</span><strong>${escapeHtml(
+                        res.bestMatch.member
+                      )}</strong></div>`
+                    : ""
+                }
                 ${
                   res.bestMatch.date
                     ? `<div><span class="text-slate-400 font-medium mr-1.5">일자:</span>${res.bestMatch.date}</div>`
@@ -1559,9 +1578,13 @@
                 ✅ 자유롭게 팬 활동 및 SNS 공유가 가능한 사진입니다.
               </p>
               <div class="bg-white/90 border border-emerald-100 rounded-xl p-3 text-xs text-slate-700 space-y-1 shadow-xs">
-                <div><span class="text-slate-400 font-medium mr-1.5">멤버:</span><strong>${escapeHtml(
-                  res.bestMatch.member || "-"
-                )}</strong></div>
+                ${
+                  res.bestMatch.member
+                    ? `<div><span class="text-slate-400 font-medium mr-1.5">멤버:</span><strong>${escapeHtml(
+                        res.bestMatch.member
+                      )}</strong></div>`
+                    : ""
+                }
                 ${
                   res.bestMatch.date
                     ? `<div><span class="text-slate-400 font-medium mr-1.5">일자:</span>${res.bestMatch.date}</div>`
@@ -1581,11 +1604,7 @@
             // UNKNOWN / NOT FOUND
             const similarityRate = (100 - (res.distance / 64) * 100).toFixed(0);
             // 유사 셀카 감지: 동일 판정에는 미달하지만(90% 미만), 80%~89% 수준으로 비슷한 사진이 DB에 있는 경우
-            const hasCloseProximity = Boolean(
-              res.bestMatch &&
-                res.distance > selectedThreshold &&
-                res.distance <= 12
-            );
+            const hasCloseProximity = Boolean(res.bestMatch && res.distance > selectedThreshold && res.distance <= 12);
 
             card.innerHTML = `
             <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border border-slate-200 shadow-sm mx-auto sm:mx-0">
@@ -1611,8 +1630,8 @@
                   <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5"></i>
                   <div>
                     <strong>유사 컷 주의 (일치율 ${similarityRate}%):</strong> DB에 구도가 매우 유사한 사진(${escapeHtml(
-                      res.bestMatch.member || "멤버"
-                    )} / ${escapeHtml(
+                      res.bestMatch.member ? res.bestMatch.member + " / " : ""
+                    )}${escapeHtml(
                       res.bestMatch.platform
                     )})이 있습니다. 동일 사진으로 단정할 수 없으나, 같은 착장이거나 연속 촬영된 셀카일 가능성이 있으니 출처를 다시 확인해 보세요.
                   </div>
