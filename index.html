@@ -873,75 +873,141 @@
           "px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1.5";
       }
 
-      // Robust Block-Mean Structural Perceptual Hash
-      // Solves cross-platform GPU shader rounding variance between PC and Mobile
-      // Immune to flat low-contrast backgrounds (tents, monochrome walls, solid fabrics)
-      function computeDHash(imageElement) {
+      /*
+       * DUAL HYBRID ENGINE (128-bit: Structure + Color)
+       * 1. 64-bit DCT Structural Hash: Analyzes texture, silhouettes, composition.
+       * 2. 64-bit Spatial Color Signature: 4x4 regional color vector comparison.
+       * Eliminates false positives between different backgrounds (e.g. purple wall vs blue sky).
+       */
+
+      // Precompute DCT cosine table for fast 32x32 -> 8x8 transform
+      const COS_TABLE = [];
+      for (let u = 0; u < 8; u++) {
+        COS_TABLE[u] = [];
+        for (let x = 0; x < 32; x++) {
+          COS_TABLE[u][x] = Math.cos(((2 * x + 1) * u * Math.PI) / 64);
+        }
+      }
+
+      function computeDualHash(imageElement) {
         return new Promise((resolve, reject) => {
           try {
-            // Draw to a standardized 32x32 canvas
-            const canvas = document.createElement("canvas");
-            canvas.width = 32;
-            canvas.height = 32;
-            const ctx = canvas.getContext("2d", { willReadFrequently: true });
-            if (!ctx) {
-              return reject(new Error("Canvas context 생성 실패"));
-            }
+            // Step 1: Standardized 32x32 rendering for DCT structure
+            const canvas32 = document.createElement("canvas");
+            canvas32.width = 32;
+            canvas32.height = 32;
+            const ctx32 = canvas32.getContext("2d", { willReadFrequently: true });
+            if (!ctx32) return reject(new Error("Canvas context 생성 실패"));
 
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = "high";
-            ctx.drawImage(imageElement, 0, 0, 32, 32);
+            ctx32.imageSmoothingEnabled = true;
+            ctx32.imageSmoothingQuality = "high";
+            ctx32.drawImage(imageElement, 0, 0, 32, 32);
 
-            const imgData = ctx.getImageData(0, 0, 32, 32).data;
-
-            // Compute 8x8 block averages in pure JavaScript (each block is 4x4 pixels)
-            // Mathematical CPU averaging ensures identical results across iOS Safari, Android, and PC Chrome
-            const blocks = [];
-            let totalSum = 0;
-
-            for (let by = 0; by < 8; by++) {
-              for (let bx = 0; bx < 8; bx++) {
-                let blockSum = 0;
-                for (let py = 0; py < 4; py++) {
-                  for (let px = 0; px < 4; px++) {
-                    const x = bx * 4 + px;
-                    const y = by * 4 + py;
-                    const idx = (y * 32 + x) * 4;
-                    // Standard Rec. 601 Luma
-                    const luma =
-                      imgData[idx] * 0.299 +
-                      imgData[idx + 1] * 0.587 +
-                      imgData[idx + 2] * 0.114;
-                    blockSum += luma;
-                  }
-                }
-                const blockAvg = blockSum / 16;
-                blocks.push(blockAvg);
-                totalSum += blockAvg;
+            const imgData32 = ctx32.getImageData(0, 0, 32, 32).data;
+            const grayMatrix = [];
+            for (let y = 0; y < 32; y++) {
+              grayMatrix[y] = [];
+              for (let x = 0; x < 32; x++) {
+                const idx = (y * 32 + x) * 4;
+                // Standard Rec. 601 Luma
+                grayMatrix[y][x] =
+                  imgData32[idx] * 0.299 +
+                  imgData32[idx + 1] * 0.587 +
+                  imgData32[idx + 2] * 0.114;
               }
             }
 
-            const globalAvg = totalSum / 64;
+            // Step 2: 2D DCT (compute top-left 8x8 low frequency coefficients)
+            const dctCoeffs = [];
+            for (let u = 0; u < 8; u++) {
+              for (let v = 0; v < 8; v++) {
+                let sum = 0;
+                for (let y = 0; y < 32; y++) {
+                  const cy = COS_TABLE[v][y];
+                  for (let x = 0; x < 32; x++) {
+                    sum += grayMatrix[y][x] * COS_TABLE[u][x] * cy;
+                  }
+                }
+                dctCoeffs.push(sum);
+              }
+            }
 
-            // Build 64-bit binary string based on global structural energy
-            let binaryString = "";
+            // Median thresholding for structural hash (exclude DC component at index 0)
+            const acValues = dctCoeffs.slice(1);
+            const sortedAc = [...acValues].sort((a, b) => a - b);
+            const medianVal = sortedAc[Math.floor(sortedAc.length / 2)];
+
+            let structBinary = "";
             for (let i = 0; i < 64; i++) {
-              binaryString += blocks[i] >= globalAvg ? "1" : "0";
+              structBinary += dctCoeffs[i] > medianVal ? "1" : "0";
             }
 
-            // Convert 64-bit binary to 16-character hexadecimal hash
-            let hexHash = "";
+            let structHex = "";
             for (let i = 0; i < 64; i += 4) {
-              const chunk = binaryString.substr(i, 4);
-              hexHash += parseInt(chunk, 2).toString(16);
+              structHex += parseInt(structBinary.substr(i, 4), 2).toString(16);
             }
 
-            resolve(hexHash);
+            // Step 3: Spatial Color Signature (4x4 regions = 16 blocks x 4 bits = 64 bits)
+            const colorCanvas = document.createElement("canvas");
+            colorCanvas.width = 16;
+            colorCanvas.height = 16;
+            const colorCtx = colorCanvas.getContext("2d", { willReadFrequently: true });
+            colorCtx.imageSmoothingEnabled = true;
+            colorCtx.drawImage(imageElement, 0, 0, 16, 16);
+            const cData = colorCtx.getImageData(0, 0, 16, 16).data;
+
+            // Compute 4x4 region averages
+            const regions = [];
+            let totalLumaSum = 0;
+
+            for (let ry = 0; ry < 4; ry++) {
+              for (let rx = 0; rx < 4; rx++) {
+                let rSum = 0, gSum = 0, bSum = 0;
+                for (let py = 0; py < 4; py++) {
+                  for (let px = 0; px < 4; px++) {
+                    const x = rx * 4 + px;
+                    const y = ry * 4 + py;
+                    const idx = (y * 16 + x) * 4;
+                    rSum += cData[idx];
+                    gSum += cData[idx + 1];
+                    bSum += cData[idx + 2];
+                  }
+                }
+                const rAvg = rSum / 16;
+                const gAvg = gSum / 16;
+                const bAvg = bSum / 16;
+                const luma = rAvg * 0.299 + gAvg * 0.587 + bAvg * 0.114;
+                regions.push({ r: rAvg, g: gAvg, b: bAvg, luma });
+                totalLumaSum += luma;
+              }
+            }
+
+            const globalLuma = totalLumaSum / 16;
+            let colorBinary = "";
+            for (let i = 0; i < 16; i++) {
+              const reg = regions[i];
+              // 4 bits per region: Color distribution + relative brightness
+              colorBinary += reg.r > reg.g ? "1" : "0";
+              colorBinary += reg.g > reg.b ? "1" : "0";
+              colorBinary += reg.b > reg.r ? "1" : "0";
+              colorBinary += reg.luma >= globalLuma ? "1" : "0";
+            }
+
+            let colorHex = "";
+            for (let i = 0; i < 64; i += 4) {
+              colorHex += parseInt(colorBinary.substr(i, 4), 2).toString(16);
+            }
+
+            // Composite 32-hex character Dual Hash (16 hex structure + 16 hex color)
+            resolve(structHex + colorHex);
           } catch (err) {
             reject(err);
           }
         });
       }
+
+      // Backward compatible alias
+      const computeDHash = computeDualHash;
 
       // Calculate Hamming Distance between two hex strings
       function getHammingDistance(hash1, hash2) {
@@ -951,13 +1017,59 @@
           const val1 = parseInt(hash1[i], 16);
           const val2 = parseInt(hash2[i], 16);
           let xor = val1 ^ val2;
-          // Count set bits
           while (xor > 0) {
             dist += xor & 1;
             xor >>= 1;
           }
         }
         return dist;
+      }
+
+      // Dual Hybrid Distance Evaluation
+      function evaluateDualMatch(inputHash, dbHash, structMaxDiff = 6) {
+        // If DB has old 16-character legacy hash, evaluate on 16 chars
+        if (inputHash.length === 16 || dbHash.length === 16) {
+          const dist = getHammingDistance(inputHash.substr(0, 16), dbHash.substr(0, 16));
+          const sim = Math.round((1 - dist / 64) * 100);
+          return {
+            isMatch: dist <= structMaxDiff,
+            structDist: dist,
+            colorDist: 0,
+            similarity: sim,
+            isColorRejected: false,
+            hasCloseProximity: dist > structMaxDiff && dist <= 11
+          };
+        }
+
+        // Dual 32-character comparison
+        const structDist = getHammingDistance(inputHash.substr(0, 16), dbHash.substr(0, 16));
+        const colorDist = getHammingDistance(inputHash.substr(16, 16), dbHash.substr(16, 16));
+
+        const structSim = (1 - structDist / 64) * 100;
+        const colorSim = (1 - colorDist / 64) * 100;
+        const overallSim = Math.round(structSim * 0.5 + colorSim * 0.5);
+
+        // HARD COLOR GATE: If color similarity is under 78% (colorDist > 14),
+        // it is impossible for them to be the same photo!
+        const isColorRejected = colorDist > 14;
+
+        // TRUE MATCH: Both Structure AND Color must pass strict thresholds
+        // structDist <= structMaxDiff (default 6 = 90.6%) AND colorDist <= 8 (87.5%)
+        const isMatch = !isColorRejected && (structDist <= structMaxDiff) && (colorDist <= 8);
+
+        // Close Proximity (유사 컷): Colors match well (>= 80%) and structure is somewhat close
+        const hasCloseProximity = !isMatch && !isColorRejected && colorSim >= 80 && structDist <= 13;
+
+        return {
+          isMatch,
+          structDist,
+          colorDist,
+          structSim: Math.round(structSim),
+          colorSim: Math.round(colorSim),
+          similarity: overallSim,
+          isColorRejected,
+          hasCloseProximity
+        };
       }
 
       async function loadDatabase() {
@@ -1356,28 +1468,29 @@
         return new Promise(async (resolve) => {
           try {
             const img = await loadImageElement(file);
-            const hash = await computeDHash(img);
+            const hash = await computeDualHash(img);
             let bestMatch = null;
-            let minDistance = 64;
+            let bestEval = null;
+            let highestSim = -1;
 
             for (const entry of photoDatabase) {
-              const dist = getHammingDistance(hash, entry.hash);
-              if (dist < minDistance) {
-                minDistance = dist;
+              const res = evaluateDualMatch(hash, entry.hash, selectedThreshold);
+              if (res.similarity > highestSim) {
+                highestSim = res.similarity;
                 bestMatch = entry;
+                bestEval = res;
               }
             }
 
             const previewUrl = URL.createObjectURL(file);
-            // 선택된 엄격도 기준(기본: 6비트 이하 = 90.6% 이상)만 동일 사진으로 인정
-            const isMatch = Boolean(bestMatch && minDistance <= selectedThreshold);
             resolve({
               file,
               dataUrl: previewUrl,
               hash,
-              isMatch,
+              isMatch: Boolean(bestEval && bestEval.isMatch),
               bestMatch,
-              distance: minDistance,
+              evalResult: bestEval,
+              similarity: bestEval ? bestEval.similarity : 0
             });
           } catch (err) {
             resolve({ file, dataUrl: "", error: true });
@@ -1502,6 +1615,8 @@
             "bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden p-5 flex flex-col sm:flex-row gap-4 sm:gap-5 items-start sm:items-center animate-result-card";
           card.style.animationDelay = `${(index + 1) * 70}ms`;
 
+          const ev = res.evalResult;
+
           if (res.isMatch && res.bestMatch.isPaid) {
             // PAID PHOTO: Warning
             card.classList.add(
@@ -1522,10 +1637,7 @@
                 <span class="text-xs font-semibold text-rose-800">${escapeHtml(
                   res.bestMatch.platform
                 )}</span>
-                <span class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-rose-100 text-rose-700">일치율 ${(
-                  100 -
-                  (res.distance / 64) * 100
-                ).toFixed(0)}%</span>
+                <span class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-rose-100 text-rose-700">일치율 ${res.similarity}% (구조 ${ev ? ev.structSim : 100}% · 색상 ${ev ? ev.colorSim : 100}%)</span>
               </div>
               <p class="text-xs sm:text-sm font-bold text-rose-900 leading-snug">
                 🚨 이 사진은 외부 SNS(트위터, 인스타, 커뮤니티 등)에 배포할 수 없습니다.
@@ -1569,10 +1681,7 @@
                 <span class="text-xs font-semibold text-emerald-800">${escapeHtml(
                   res.bestMatch.platform
                 )}</span>
-                <span class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700">일치율 ${(
-                  100 -
-                  (res.distance / 64) * 100
-                ).toFixed(0)}%</span>
+                <span class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700">일치율 ${res.similarity}% (구조 ${ev ? ev.structSim : 100}% · 색상 ${ev ? ev.colorSim : 100}%)</span>
               </div>
               <p class="text-xs sm:text-sm font-bold text-emerald-900 leading-snug">
                 ✅ 자유롭게 팬 활동 및 SNS 공유가 가능한 사진입니다.
@@ -1602,9 +1711,7 @@
           `;
           } else {
             // UNKNOWN / NOT FOUND
-            const similarityRate = (100 - (res.distance / 64) * 100).toFixed(0);
-            // 유사 셀카 감지: 동일 판정에는 미달하지만(90% 미만), 80%~89% 수준으로 비슷한 사진이 DB에 있는 경우
-            const hasCloseProximity = Boolean(res.bestMatch && res.distance > selectedThreshold && res.distance <= 12);
+            const hasProximity = ev && ev.hasCloseProximity;
 
             card.innerHTML = `
             <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border border-slate-200 shadow-sm mx-auto sm:mx-0">
@@ -1624,16 +1731,16 @@
                 현재 등록된 데이터베이스에서 일치하는 사진을 찾지 못했습니다. 공식 계정(X, Instagram등) 미디어이거나 아직 등록되지 않은 플챗 미디어일 수 있으니 공유 전 한 번 더 출처를 확인해 주세요.
               </p>
               ${
-                hasCloseProximity
+                hasProximity
                   ? `
                 <div class="bg-amber-50 border border-amber-200/80 rounded-xl p-2.5 text-[11px] text-amber-900 flex items-start gap-2 mt-1.5">
                   <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5"></i>
                   <div>
-                    <strong>유사 컷 주의 (일치율 ${similarityRate}%):</strong> DB에 구도가 매우 유사한 사진(${escapeHtml(
+                    <strong>유사 컷 주의 (색상 ${ev.colorSim}% · 구조 ${ev.structSim}%):</strong> DB에 색감과 착장이 매우 유사한 사진(${escapeHtml(
                       res.bestMatch.member ? res.bestMatch.member + " / " : ""
                     )}${escapeHtml(
                       res.bestMatch.platform
-                    )})이 있습니다. 동일 사진으로 단정할 수 없으나, 같은 착장이거나 연속 촬영된 셀카일 가능성이 있으니 출처를 다시 확인해 보세요.
+                    )})이 등록되어 있습니다. 동일 사진은 아니지만 연속 촬영된 유사 셀카일 가능성이 있으니 출처를 다시 확인해 보세요.
                   </div>
                 </div>
               `
