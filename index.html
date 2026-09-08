@@ -655,6 +655,43 @@
        * - Computes Hamming distance to detect identical/re-compressed/cropped images.
        */
 
+      // HTML Escape Helper (prevents ReferenceError and XSS)
+      function escapeHtml(str) {
+        if (str === null || str === undefined) return "";
+        return String(str)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      // Helper: Safely load file into Image element with ObjectURL & Timeout
+      function loadImageElement(file) {
+        return new Promise((resolve, reject) => {
+          const objectUrl = URL.createObjectURL(file);
+          const img = new Image();
+          const timer = setTimeout(() => {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error("이미지 로딩 시간 초과 (10초)"));
+          }, 10000);
+
+          img.onload = () => {
+            clearTimeout(timer);
+            URL.revokeObjectURL(objectUrl);
+            resolve(img);
+          };
+          img.onerror = () => {
+            clearTimeout(timer);
+            URL.revokeObjectURL(objectUrl);
+            reject(
+              new Error("지원하지 않는 이미지 형식이거나 손상된 파일입니다.")
+            );
+          };
+          img.src = objectUrl;
+        });
+      }
+
       // Default built-in mock database (Pre-loaded samples for demonstration)
       const DEFAULT_DB = [
         {
@@ -857,9 +894,23 @@
       }
 
       function saveDatabaseToStorage() {
-        localStorage.setItem("rescene_photo_db", JSON.stringify(photoDatabase));
+        try {
+          localStorage.setItem(
+            "rescene_photo_db",
+            JSON.stringify(photoDatabase)
+          );
+        } catch (e) {
+          console.warn("로컬 스토리지 용량 초과 또는 권한 없음:", e);
+        }
         updateDbUI();
       }
+
+      // DB 항목 개별 삭제 함수 (전역 연결)
+      window.removeDbEntry = function (id) {
+        photoDatabase = photoDatabase.filter((item) => item.id !== id);
+        saveDatabaseToStorage();
+        showToast("해당 사진 해시가 삭제되었습니다.", "trash-2");
+      };
 
       function updateDbUI() {
         const tbody = document.getElementById("dbTableBody");
@@ -1096,9 +1147,12 @@
 
         addDbEntryBtn.disabled = true;
         batchProgressBarBox.classList.remove("hidden");
+        progressBarFill.classList.remove("bg-emerald-600");
+        progressBarFill.classList.add("bg-indigo-600");
 
         const total = stagedAdminFiles.length;
         let successCount = 0;
+        let failCount = 0;
 
         for (let i = 0; i < total; i++) {
           const file = stagedAdminFiles[i];
@@ -1109,23 +1163,13 @@
           progressText.textContent = `디지털 지문 추출 중... (${
             i + 1
           }/${total})`;
-          addBtnText.textContent = `등록 중 (${i + 1}/${total})`;
+          addBtnText.textContent = `처리 중 (${i + 1}/${total})`;
+
+          // Yield control to browser rendering loop
+          await new Promise((resolve) => setTimeout(resolve, 25));
 
           try {
-            const dataUrl = await new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result);
-              reader.onerror = reject;
-              reader.readAsDataURL(file);
-            });
-
-            const img = await new Promise((resolve, reject) => {
-              const image = new Image();
-              image.onload = () => resolve(image);
-              image.onerror = reject;
-              image.src = dataUrl;
-            });
-
+            const img = await loadImageElement(file);
             const hash = await computeDHash(img);
             const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
             const noteText = baseNote
@@ -1147,19 +1191,35 @@
             });
             successCount++;
           } catch (err) {
-            console.error("Error processing file", file.name, err);
+            console.error("파일 처리 실패:", file.name, err);
+            failCount++;
           }
         }
+
+        // 100% 완료 상태 표시
+        progressBarFill.style.width = "100%";
+        progressBarFill.classList.remove("bg-indigo-600");
+        progressBarFill.classList.add("bg-emerald-600");
+        progressText.textContent = `완료! (성공 ${successCount}건${
+          failCount > 0 ? `, 실패 ${failCount}건` : ""
+        })`;
+        progressPercent.textContent = "100%";
+        addBtnText.textContent = "등록 완료!";
 
         saveDatabaseToStorage();
         stagedAdminFiles = [];
         renderStagedGallery();
         document.getElementById("formNote").value = "";
 
-        batchProgressBarBox.classList.add("hidden");
-        progressBarFill.style.width = "0%";
-        addDbEntryBtn.disabled = false;
-        addBtnText.textContent = "대기 중인 사진 전체 DB 등록하기";
+        // 잠시 후 프로그레스 바 숨김 및 버튼 리셋
+        setTimeout(() => {
+          batchProgressBarBox.classList.add("hidden");
+          progressBarFill.style.width = "0%";
+          progressBarFill.classList.remove("bg-emerald-600");
+          progressBarFill.classList.add("bg-indigo-600");
+          addDbEntryBtn.disabled = false;
+          addBtnText.textContent = "대기 중인 사진 전체 DB 등록하기";
+        }, 1800);
 
         showToast(
           `${successCount}장의 사진이 성공적으로 등록되었습니다! 상단의 [JSON 내보내기]를 눌러 저장하세요.`,
@@ -1175,41 +1235,34 @@
       const resultContainer = document.getElementById("resultContainer");
 
       function checkSingleImage(file) {
-        return new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onload = async (e) => {
-            const dataUrl = e.target.result;
-            const img = new Image();
-            img.onload = async () => {
-              try {
-                const hash = await computeDHash(img);
-                let bestMatch = null;
-                let minDistance = 64;
+        return new Promise(async (resolve) => {
+          try {
+            const img = await loadImageElement(file);
+            const hash = await computeDHash(img);
+            let bestMatch = null;
+            let minDistance = 64;
 
-                for (const entry of photoDatabase) {
-                  const dist = getHammingDistance(hash, entry.hash);
-                  if (dist < minDistance) {
-                    minDistance = dist;
-                    bestMatch = entry;
-                  }
-                }
-
-                const isMatch = bestMatch && minDistance <= HAMMING_THRESHOLD;
-                resolve({
-                  file,
-                  dataUrl,
-                  hash,
-                  isMatch,
-                  bestMatch,
-                  distance: minDistance,
-                });
-              } catch (err) {
-                resolve({ file, dataUrl, error: true });
+            for (const entry of photoDatabase) {
+              const dist = getHammingDistance(hash, entry.hash);
+              if (dist < minDistance) {
+                minDistance = dist;
+                bestMatch = entry;
               }
-            };
-            img.src = dataUrl;
-          };
-          reader.readAsDataURL(file);
+            }
+
+            const previewUrl = URL.createObjectURL(file);
+            const isMatch = bestMatch && minDistance <= HAMMING_THRESHOLD;
+            resolve({
+              file,
+              dataUrl: previewUrl,
+              hash,
+              isMatch,
+              bestMatch,
+              distance: minDistance,
+            });
+          } catch (err) {
+            resolve({ file, dataUrl: "", error: true });
+          }
         });
       }
 
