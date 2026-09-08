@@ -38,6 +38,33 @@
         background-color: #cbd5e1;
         border-radius: 9999px;
       }
+      @keyframes resultSlideUp {
+        from {
+          opacity: 0;
+          transform: translateY(18px) scale(0.98);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+      .animate-result-card {
+        animation: resultSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      @keyframes pulseRing {
+        0% {
+          box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.4);
+        }
+        70% {
+          box-shadow: 0 0 0 10px rgba(244, 63, 94, 0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(244, 63, 94, 0);
+        }
+      }
+      .pulse-danger {
+        animation: pulseRing 1.8s infinite;
+      }
     </style>
   </head>
   <body
@@ -154,7 +181,8 @@
             />
 
             <div
-              class="flex flex-col items-center justify-center gap-3 pointer-events-none"
+              id="dropZoneContent"
+              class="flex flex-col items-center justify-center gap-3 pointer-events-none transition-all"
             >
               <div
                 class="w-14 h-14 rounded-2xl bg-white shadow-sm border border-slate-200 flex items-center justify-center group-hover:scale-105 group-hover:text-rose-600 text-slate-500 transition-all"
@@ -170,13 +198,36 @@
                 </p>
               </div>
             </div>
+
+            <!-- Dropzone Loading State (Hidden by default) -->
+            <div
+              id="dropZoneLoading"
+              class="hidden flex flex-col items-center justify-center gap-3 pointer-events-none py-2"
+            >
+              <div
+                class="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 animate-spin"
+              >
+                <i data-lucide="loader" class="w-6 h-6"></i>
+              </div>
+              <div>
+                <p
+                  id="dropZoneLoadingTitle"
+                  class="text-sm font-bold text-rose-600 animate-pulse"
+                >
+                  사진 분석 및 출처 대조 중...
+                </p>
+                <p class="text-xs text-slate-500 mt-1">
+                  잠시만 기다려주세요, 결과로 자동 이동합니다.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
         <!-- Result Card (Hidden by default) -->
         <div
           id="resultContainer"
-          class="hidden transition-all duration-300 space-y-4"
+          class="hidden transition-all duration-300 space-y-4 scroll-mt-20"
         >
           <!-- Rendered dynamically via JS -->
         </div>
@@ -1255,6 +1306,11 @@
       // ==========================================
       const imageInput = document.getElementById("imageInput");
       const dropZone = document.getElementById("dropZone");
+      const dropZoneContent = document.getElementById("dropZoneContent");
+      const dropZoneLoading = document.getElementById("dropZoneLoading");
+      const dropZoneLoadingTitle = document.getElementById(
+        "dropZoneLoadingTitle"
+      );
       const resultContainer = document.getElementById("resultContainer");
 
       function checkSingleImage(file) {
@@ -1298,35 +1354,97 @@
           return;
         }
 
+        // 1. Show immediate loading feedback in dropzone for mobile users
+        if (dropZoneContent && dropZoneLoading) {
+          dropZoneContent.classList.add("hidden");
+          dropZoneLoading.classList.remove("hidden");
+          dropZoneLoadingTitle.textContent = `${imageFiles.length}장의 사진 분석 및 대조 중...`;
+          lucide.createIcons();
+        }
+
         resultContainer.classList.remove("hidden");
         resultContainer.innerHTML = `
-        <div class="bg-white border border-slate-200 rounded-2xl p-6 text-center shadow-sm">
+        <div class="bg-white border border-rose-200 rounded-2xl p-6 text-center shadow-sm">
           <div class="inline-block animate-spin text-rose-500 mb-2">
-            <i data-lucide="loader-2" class="w-6 h-6"></i>
+            <i data-lucide="loader-2" class="w-7 h-7"></i>
           </div>
-          <p class="text-xs font-semibold text-slate-700">${imageFiles.length}장의 사진 출처를 판별하고 있습니다...</p>
+          <p class="text-sm font-bold text-slate-800">${imageFiles.length}장의 사진 출처를 판별하고 있습니다...</p>
+          <p class="text-xs text-slate-500 mt-1">고화질 디지털 지문(dHash) 대조 중</p>
         </div>
       `;
         lucide.createIcons();
 
+        // Ensure smooth scroll to result container immediately so user sees something is happening
+        resultContainer.scrollIntoView({ behavior: "smooth", block: "start" });
+
+        // Yield frame to paint
+        await new Promise((r) => setTimeout(r, 60));
+
         const results = await Promise.all(
           imageFiles.map((f) => checkSingleImage(f))
         );
+
+        // Reset dropzone state
+        if (dropZoneContent && dropZoneLoading) {
+          dropZoneContent.classList.remove("hidden");
+          dropZoneLoading.classList.add("hidden");
+        }
+
         renderUserResults(results);
       }
 
       function renderUserResults(results) {
         resultContainer.innerHTML = "";
 
+        let paidCount = 0;
+        let publicCount = 0;
+        let unknownCount = 0;
+
+        results.forEach((r) => {
+          if (r.isMatch && r.bestMatch.isPaid) paidCount++;
+          else if (r.isMatch && !r.bestMatch.isPaid) publicCount++;
+          else unknownCount++;
+        });
+
+        // 2. Mobile Haptic feedback (Vibration)
+        if ("vibrate" in navigator) {
+          if (paidCount > 0) {
+            // Warning vibration: 2 short pulses
+            navigator.vibrate([100, 60, 120]);
+          } else {
+            // Success light vibration: 1 short pulse
+            navigator.vibrate(80);
+          }
+        }
+
         const summaryCard = document.createElement("div");
         summaryCard.className =
-          "flex items-center justify-between bg-white border border-slate-200 rounded-2xl p-4 shadow-sm text-xs";
+          "flex flex-wrap items-center justify-between gap-3 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm text-xs animate-result-card";
         summaryCard.innerHTML = `
         <div class="flex items-center gap-2">
-          <i data-lucide="layers" class="w-4 h-4 text-slate-500"></i>
-          <span class="font-bold text-slate-800">총 ${results.length}장의 사진 검사 완료</span>
+          <span class="w-7 h-7 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-xs">
+            ${results.length}
+          </span>
+          <div>
+            <div class="font-bold text-slate-900 flex items-center gap-2">
+              검사 완료
+              ${
+                paidCount > 0
+                  ? `<span class="text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full font-bold text-[11px] border border-rose-200">유료 사진 ${paidCount}장 발견</span>`
+                  : ""
+              }
+              ${
+                publicCount > 0
+                  ? `<span class="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full font-bold text-[11px] border border-emerald-200">공개 사진 ${publicCount}장</span>`
+                  : ""
+              }
+            </div>
+            <p class="text-[11px] text-slate-500">아래 판별 상세 내역을 확인하세요.</p>
+          </div>
         </div>
-        <button id="clearResultsBtn" class="text-slate-400 hover:text-slate-700 font-medium">검사 결과 닫기</button>
+        <button id="clearResultsBtn" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold transition-colors">
+          결과 닫기
+        </button>
       `;
         resultContainer.appendChild(summaryCard);
 
@@ -1335,18 +1453,24 @@
           .addEventListener("click", () => {
             resultContainer.classList.add("hidden");
             resultContainer.innerHTML = "";
+            dropZone.scrollIntoView({ behavior: "smooth", block: "center" });
           });
 
-        results.forEach((res) => {
+        results.forEach((res, index) => {
           const card = document.createElement("div");
           card.className =
-            "bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden p-5 flex flex-col md:flex-row gap-5 items-center";
+            "bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden p-5 flex flex-col sm:flex-row gap-4 sm:gap-5 items-start sm:items-center animate-result-card";
+          card.style.animationDelay = `${(index + 1) * 70}ms`;
 
           if (res.isMatch && res.bestMatch.isPaid) {
             // PAID PHOTO: Warning
-            card.classList.add("border-rose-300", "bg-rose-50/20");
+            card.classList.add(
+              "border-rose-300",
+              "bg-rose-50/30",
+              "pulse-danger"
+            );
             card.innerHTML = `
-            <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border border-rose-200">
+            <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border-2 border-rose-300 shadow-sm mx-auto sm:mx-0">
               <img src="${res.dataUrl}" class="w-full h-full object-cover" />
             </div>
             <div class="flex-1 space-y-2 text-left w-full">
@@ -1358,26 +1482,26 @@
                 <span class="text-xs font-semibold text-rose-800">${escapeHtml(
                   res.bestMatch.platform
                 )}</span>
-                <span class="text-xs text-slate-400">일치도 ${(
+                <span class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-rose-100 text-rose-700">일치율 ${(
                   100 -
                   (res.distance / 64) * 100
                 ).toFixed(0)}%</span>
               </div>
-              <p class="text-xs font-bold text-rose-900 leading-snug">
+              <p class="text-xs sm:text-sm font-bold text-rose-900 leading-snug">
                 🚨 이 사진은 외부 SNS(트위터, 인스타, 커뮤니티 등)에 배포할 수 없습니다.
               </p>
-              <div class="bg-white/80 border border-rose-100 rounded-lg p-2.5 text-xs text-slate-600 space-y-0.5">
-                <div><strong>멤버:</strong> ${escapeHtml(
+              <div class="bg-white/90 border border-rose-100 rounded-xl p-3 text-xs text-slate-700 space-y-1 shadow-xs">
+                <div><span class="text-slate-400 font-medium mr-1.5">멤버:</span><strong>${escapeHtml(
                   res.bestMatch.member || "-"
-                )}</div>
+                )}</strong></div>
                 ${
                   res.bestMatch.date
-                    ? `<div><strong>일자:</strong> ${res.bestMatch.date}</div>`
+                    ? `<div><span class="text-slate-400 font-medium mr-1.5">일자:</span>${res.bestMatch.date}</div>`
                     : ""
                 }
                 ${
                   res.bestMatch.note
-                    ? `<div><strong>상세:</strong> ${escapeHtml(
+                    ? `<div><span class="text-slate-400 font-medium mr-1.5">상세:</span>${escapeHtml(
                         res.bestMatch.note
                       )}</div>`
                     : ""
@@ -1389,7 +1513,7 @@
             // FREE/PUBLIC PHOTO: Allowed
             card.classList.add("border-emerald-300", "bg-emerald-50/20");
             card.innerHTML = `
-            <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border border-emerald-200">
+            <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border-2 border-emerald-300 shadow-sm mx-auto sm:mx-0">
               <img src="${res.dataUrl}" class="w-full h-full object-cover" />
             </div>
             <div class="flex-1 space-y-2 text-left w-full">
@@ -1401,26 +1525,26 @@
                 <span class="text-xs font-semibold text-emerald-800">${escapeHtml(
                   res.bestMatch.platform
                 )}</span>
-                <span class="text-xs text-slate-400">일치도 ${(
+                <span class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700">일치율 ${(
                   100 -
                   (res.distance / 64) * 100
                 ).toFixed(0)}%</span>
               </div>
-              <p class="text-xs font-bold text-emerald-900 leading-snug">
+              <p class="text-xs sm:text-sm font-bold text-emerald-900 leading-snug">
                 ✅ 자유롭게 팬 활동 및 SNS 공유가 가능한 사진입니다.
               </p>
-              <div class="bg-white/80 border border-emerald-100 rounded-lg p-2.5 text-xs text-slate-600 space-y-0.5">
-                <div><strong>멤버:</strong> ${escapeHtml(
+              <div class="bg-white/90 border border-emerald-100 rounded-xl p-3 text-xs text-slate-700 space-y-1 shadow-xs">
+                <div><span class="text-slate-400 font-medium mr-1.5">멤버:</span><strong>${escapeHtml(
                   res.bestMatch.member || "-"
-                )}</div>
+                )}</strong></div>
                 ${
                   res.bestMatch.date
-                    ? `<div><strong>일자:</strong> ${res.bestMatch.date}</div>`
+                    ? `<div><span class="text-slate-400 font-medium mr-1.5">일자:</span>${res.bestMatch.date}</div>`
                     : ""
                 }
                 ${
                   res.bestMatch.note
-                    ? `<div><strong>상세:</strong> ${escapeHtml(
+                    ? `<div><span class="text-slate-400 font-medium mr-1.5">상세:</span>${escapeHtml(
                         res.bestMatch.note
                       )}</div>`
                     : ""
@@ -1431,16 +1555,16 @@
           } else {
             // UNKNOWN / NOT FOUND
             card.innerHTML = `
-            <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border border-slate-200">
+            <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border border-slate-200 shadow-sm mx-auto sm:mx-0">
               <img src="${res.dataUrl}" class="w-full h-full object-cover" />
             </div>
             <div class="flex-1 space-y-2 text-left w-full">
               <div class="flex items-center gap-2">
-                <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 flex items-center gap-1 border border-slate-200">
+                <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-200 text-slate-700 flex items-center gap-1">
                   <i data-lucide="help-circle" class="w-3.5 h-3.5 text-slate-500"></i>
                   DB 미등록 사진
                 </span>
-                <span class="text-xs text-slate-400">파일: ${escapeHtml(
+                <span class="text-xs text-slate-400 max-w-[140px] sm:max-w-none truncate">파일: ${escapeHtml(
                   res.file.name
                 )}</span>
               </div>
@@ -1455,6 +1579,32 @@
         });
 
         lucide.createIcons();
+
+        // 3. Smooth Auto-Scroll directly to the result summary card
+        setTimeout(() => {
+          resultContainer.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        }, 50);
+
+        // 4. Show Instant Toast Notification
+        if (paidCount > 0) {
+          showToast(
+            `🚨 유료 사진 ${paidCount}건이 발견되었습니다. 공유에 주의하세요!`,
+            "shield-alert"
+          );
+        } else if (publicCount > 0) {
+          showToast(
+            `✅ 공식 공개 사진 ${publicCount}건이 확인되었습니다!`,
+            "check-circle"
+          );
+        } else {
+          showToast(
+            `검사가 완료되었습니다. (미등록 사진 ${unknownCount}건)`,
+            "help-circle"
+          );
+        }
       }
 
       imageInput.addEventListener("change", (e) => {
