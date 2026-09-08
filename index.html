@@ -725,7 +725,7 @@
 
       // Local state
       let photoDatabase = [];
-      const HAMMING_THRESHOLD = 10; // Up to 10-bit difference matches compression/aspect ratio variations
+      const HAMMING_THRESHOLD = 12; // 12-bit threshold (tolerates mobile recompression and gamut shifts)
       let stagedAdminFiles = []; // Staged files for batch registration
 
       // Default admin password (you can change this to any passcode you like)
@@ -796,17 +796,40 @@
       }
 
       // Generate dHash (Difference Hash) from Image element or DataURL
+      // Uses 2-stage downscaling + explicit sRGB to ensure identical results across iOS Safari and PC Chrome
       function computeDHash(imageElement) {
         return new Promise((resolve, reject) => {
           try {
-            const canvas = document.getElementById("hashCanvas");
-            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            // Stage 1: Downscale to intermediate size (72x64) with high-quality smoothing
+            // This forces WebKit (Safari) to perform area-averaging instead of nearest-neighbor subsampling
+            const stepCanvas = document.createElement("canvas");
+            stepCanvas.width = 72;
+            stepCanvas.height = 64;
+            const stepCtx = stepCanvas.getContext("2d", {
+              willReadFrequently: true,
+              colorSpace: "srgb",
+            });
 
-            // dHash standard: 9 wide, 8 high
+            if (stepCtx) {
+              stepCtx.imageSmoothingEnabled = true;
+              stepCtx.imageSmoothingQuality = "high";
+              stepCtx.drawImage(imageElement, 0, 0, 72, 64);
+            }
+
+            // Stage 2: Downscale from 72x64 to 9x8
+            const canvas = document.getElementById("hashCanvas");
+            const ctx = canvas.getContext("2d", {
+              willReadFrequently: true,
+              colorSpace: "srgb",
+            });
+
             canvas.width = 9;
             canvas.height = 8;
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
 
-            ctx.drawImage(imageElement, 0, 0, 9, 8);
+            // Draw from intermediate canvas (or fallback directly to imageElement if stepCtx failed)
+            ctx.drawImage(stepCtx ? stepCanvas : imageElement, 0, 0, 9, 8);
             const imgData = ctx.getImageData(0, 0, 9, 8).data;
 
             // Convert to Grayscale values (9 cols x 8 rows)
