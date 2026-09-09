@@ -87,9 +87,7 @@
               class="font-bold text-slate-900 leading-tight text-base sm:text-lg flex items-center gap-1.5"
             >
               리센느 플챗 멤버십 사진 판별기
-              <!-- <span class="text-xs px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-medium">플러스챗 1차 오픈</span> -->
             </h1>
-            <!-- <p class="text-xs text-slate-500 hidden sm:block">공식 소셜 및 유료 서비스(Plus Chat) 콘텐츠 공유 규정 안내</p> -->
           </div>
         </div>
 
@@ -158,7 +156,7 @@
             <p class="text-sm text-slate-600">
               확인하고 싶은 리센느 사진을 끌어다 놓거나 선택하세요.<br />
               사진은 서버로 업로드되지 않으며 브라우저 내에서 안전하게 즉시
-              판별됩니다.
+              판별됩니다. (좌우 반전 및 미러 사진 감지 지원)
             </p>
           </div>
 
@@ -202,7 +200,7 @@
                   클릭하여 사진 업로드 또는 파일 여러 장 드래그 & 드롭
                 </p>
                 <p class="text-xs text-slate-500 mt-1">
-                  여러 장 동시 검사 및 클립보드 붙여넣기(Ctrl + V) 지원
+                  여러 장 동시 검사, 좌우 반전(미러) 감지, 클립보드 붙여넣기(Ctrl + V) 지원
                 </p>
               </div>
             </div>
@@ -289,7 +287,7 @@
                 플러스챗 사진 데이터베이스 관리기
               </h2>
               <p class="text-xs text-slate-500 mt-1">
-                관리자님이 보유하신 플러스챗/공식 사진들의 해시(Perceptual
+                관리자님이 보유하신 플러스챗/공식 사진들의 해시(Dual Hybrid
                 Hash)를 추출해 DB에 추가하고,
                 <code
                   class="bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-mono"
@@ -571,7 +569,7 @@
                       <th class="p-3">플랫폼</th>
                       <th class="p-3">멤버</th>
                       <th class="p-3">날짜/설명</th>
-                      <th class="p-3">해시값(dHash)</th>
+                      <th class="p-3">해시값(128-bit Dual)</th>
                       <th class="p-3 text-right">삭제</th>
                     </tr>
                   </thead>
@@ -605,8 +603,8 @@
               업로드합니다.
             </li>
             <li>
-              플러스챗 사진들을 [DB 관리도구]에서 추가한 뒤,
-              <strong>[JSON 내보내기]</strong>를 눌러
+              플러스챗 사진들을 [DB 관리도구]에서 추가하거나 로컬에서
+              <code class="text-emerald-300">build_database.py</code>로 생성한 뒤,
               <code class="text-emerald-300">database.json</code> 파일로
               저장합니다.
             </li>
@@ -711,8 +709,8 @@
       </div>
     </div>
 
-    <!-- Hidden Canvas for Perceptual Hashing (dHash) -->
-    <canvas id="hashCanvas" class="hidden" width="9" height="8"></canvas>
+    <!-- Hidden Canvas for Hash Calculation -->
+    <canvas id="hashCanvas" class="hidden" width="32" height="32"></canvas>
 
     <!-- Notification Toast Modal -->
     <div
@@ -725,15 +723,13 @@
 
     <script>
       /*
-       * Rescene Photo Origin & Status Verifier
-       * Algorithm: Difference Hash (dHash)
-       * - Resizes image to 9x8 grayscale
-       * - Compares adjacent pixels (left vs right)
-       * - Generates a 64-bit binary representation string (16 hex chars)
-       * - Computes Hamming distance to detect identical/re-compressed/cropped images.
+       * RESCENE Dual Hybrid Engine (128-bit: Structure + Color) with Mirror Check
+       * - Structure (64-bit): 2D DCT frequency transform (texture, shapes, contours)
+       * - Color (64-bit): 4x4 spatial regional color vectors & luma distribution
+       * - Dual-check: Simultaneously evaluates original and horizontally flipped (mirror) hashes.
        */
 
-      // HTML Escape Helper (prevents ReferenceError and XSS)
+      // HTML Escape Helper
       function escapeHtml(str) {
         if (str === null || str === undefined) return "";
         return String(str)
@@ -774,7 +770,7 @@
       const DEFAULT_DB = [
         {
           id: "demo-1",
-          hash: "f0e0e0a0a0e0e0f0", // Sample dHash
+          hash: "f0e0e0a0a0e0e0f08181c3c3e7e7ffff",
           platform: "플러스챗 (Plus Chat)",
           isPaid: true,
           member: "미나미",
@@ -783,7 +779,7 @@
         },
         {
           id: "demo-2",
-          hash: "8181c3c3e7e7ffff",
+          hash: "8181c3c3e7e7fffff0e0e0a0a0e0e0f0",
           platform: "플러스챗 (Plus Chat)",
           isPaid: true,
           member: "원이",
@@ -792,7 +788,7 @@
         },
         {
           id: "demo-3",
-          hash: "00183c7effc38100",
+          hash: "00183c7effc381001122334455667788",
           platform: "공식 X (Twitter)",
           isPaid: false,
           member: "전체/단체",
@@ -803,19 +799,17 @@
 
       // Local state
       let photoDatabase = [];
-      let selectedThreshold = 6; // 6-bit threshold: ~90.6% 이상 일치해야 동일 사진으로 판정 (81% 오판정 원천 차단)
+      let selectedThreshold = 6; // 6-bit threshold: ~90.6% 이상 일치해야 동일 사진으로 판정
       let stagedAdminFiles = []; // Staged files for batch registration
 
-      // Default admin password (you can change this to any passcode you like)
+      // Admin password
       const ADMIN_PASSCODE = "ilivyou";
       let isAdminAuthenticated = false;
 
-      // Check if admin is remembered in this browser session
       if (sessionStorage.getItem("rescene_admin_auth") === "true") {
         isAdminAuthenticated = true;
       }
 
-      // Check for secret URL parameter: e.g. https://yoursite.com/?admin=rescene2024
       const urlParams = new URLSearchParams(window.location.search);
       if (
         urlParams.get("admin") === ADMIN_PASSCODE ||
@@ -825,7 +819,6 @@
         sessionStorage.setItem("rescene_admin_auth", "true");
       }
 
-      // Update navigation UI based on admin authentication
       function syncAdminAuthState() {
         const navAdminBtn = document.getElementById("navAdminBtn");
         const adminLogoutBtn = document.getElementById("adminLogoutBtn");
@@ -842,7 +835,6 @@
           adminLogoutBtn.classList.add("hidden");
           if (openAdminModalBtn) openAdminModalBtn.classList.remove("hidden");
 
-          // If current view was admin, revert back to user view
           if (
             !document.getElementById("adminView").classList.contains("hidden")
           ) {
@@ -873,13 +865,6 @@
           "px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1.5";
       }
 
-      /*
-       * DUAL HYBRID ENGINE (128-bit: Structure + Color)
-       * 1. 64-bit DCT Structural Hash: Analyzes texture, silhouettes, composition.
-       * 2. 64-bit Spatial Color Signature: 4x4 regional color vector comparison.
-       * Eliminates false positives between different backgrounds (e.g. purple wall vs blue sky).
-       */
-
       // Precompute DCT cosine table for fast 32x32 -> 8x8 transform
       const COS_TABLE = [];
       for (let u = 0; u < 8; u++) {
@@ -889,7 +874,12 @@
         }
       }
 
-      function computeDualHash(imageElement) {
+      /**
+       * Computes 128-bit Dual Hybrid Hash:
+       * @param {HTMLImageElement} imageElement
+       * @param {boolean} isFlipped - If true, inverts horizontally (for mirror mode detection)
+       */
+      function computeDualHash(imageElement, isFlipped = false) {
         return new Promise((resolve, reject) => {
           try {
             // Step 1: Standardized 32x32 rendering for DCT structure
@@ -901,6 +891,11 @@
 
             ctx32.imageSmoothingEnabled = true;
             ctx32.imageSmoothingQuality = "high";
+
+            if (isFlipped) {
+              ctx32.translate(32, 0);
+              ctx32.scale(-1, 1);
+            }
             ctx32.drawImage(imageElement, 0, 0, 32, 32);
 
             const imgData32 = ctx32.getImageData(0, 0, 32, 32).data;
@@ -909,7 +904,6 @@
               grayMatrix[y] = [];
               for (let x = 0; x < 32; x++) {
                 const idx = (y * 32 + x) * 4;
-                // Standard Rec. 601 Luma
                 grayMatrix[y][x] =
                   imgData32[idx] * 0.299 +
                   imgData32[idx + 1] * 0.587 +
@@ -917,7 +911,7 @@
               }
             }
 
-            // Step 2: 2D DCT (compute top-left 8x8 low frequency coefficients)
+            // Step 2: 2D DCT (8x8 low-frequency coefficients)
             const dctCoeffs = [];
             for (let u = 0; u < 8; u++) {
               for (let v = 0; v < 8; v++) {
@@ -932,7 +926,6 @@
               }
             }
 
-            // Median thresholding for structural hash (exclude DC component at index 0)
             const acValues = dctCoeffs.slice(1);
             const sortedAc = [...acValues].sort((a, b) => a - b);
             const medianVal = sortedAc[Math.floor(sortedAc.length / 2)];
@@ -947,16 +940,20 @@
               structHex += parseInt(structBinary.substr(i, 4), 2).toString(16);
             }
 
-            // Step 3: Spatial Color Signature (4x4 regions = 16 blocks x 4 bits = 64 bits)
+            // Step 3: Spatial Color Signature (16x16 -> 4x4 regions)
             const colorCanvas = document.createElement("canvas");
             colorCanvas.width = 16;
             colorCanvas.height = 16;
             const colorCtx = colorCanvas.getContext("2d", { willReadFrequently: true });
             colorCtx.imageSmoothingEnabled = true;
+
+            if (isFlipped) {
+              colorCtx.translate(16, 0);
+              colorCtx.scale(-1, 1);
+            }
             colorCtx.drawImage(imageElement, 0, 0, 16, 16);
             const cData = colorCtx.getImageData(0, 0, 16, 16).data;
 
-            // Compute 4x4 region averages
             const regions = [];
             let totalLumaSum = 0;
 
@@ -986,7 +983,6 @@
             let colorBinary = "";
             for (let i = 0; i < 16; i++) {
               const reg = regions[i];
-              // 4 bits per region: Color distribution + relative brightness
               colorBinary += reg.r > reg.g ? "1" : "0";
               colorBinary += reg.g > reg.b ? "1" : "0";
               colorBinary += reg.b > reg.r ? "1" : "0";
@@ -998,7 +994,6 @@
               colorHex += parseInt(colorBinary.substr(i, 4), 2).toString(16);
             }
 
-            // Composite 32-hex character Dual Hash (16 hex structure + 16 hex color)
             resolve(structHex + colorHex);
           } catch (err) {
             reject(err);
@@ -1007,9 +1002,8 @@
       }
 
       // Backward compatible alias
-      const computeDHash = computeDualHash;
+      const computeDHash = (img) => computeDualHash(img, false);
 
-      // Calculate Hamming Distance between two hex strings
       function getHammingDistance(hash1, hash2) {
         if (!hash1 || !hash2 || hash1.length !== hash2.length) return 64;
         let dist = 0;
@@ -1025,9 +1019,7 @@
         return dist;
       }
 
-      // Dual Hybrid Distance Evaluation
       function evaluateDualMatch(inputHash, dbHash, structMaxDiff = 6) {
-        // If DB has old 16-character legacy hash, evaluate on 16 chars
         if (inputHash.length === 16 || dbHash.length === 16) {
           const dist = getHammingDistance(inputHash.substr(0, 16), dbHash.substr(0, 16));
           const sim = Math.round((1 - dist / 64) * 100);
@@ -1041,7 +1033,6 @@
           };
         }
 
-        // Dual 32-character comparison
         const structDist = getHammingDistance(inputHash.substr(0, 16), dbHash.substr(0, 16));
         const colorDist = getHammingDistance(inputHash.substr(16, 16), dbHash.substr(16, 16));
 
@@ -1049,15 +1040,9 @@
         const colorSim = (1 - colorDist / 64) * 100;
         const overallSim = Math.round(structSim * 0.5 + colorSim * 0.5);
 
-        // HARD COLOR GATE: If color similarity is under 78% (colorDist > 14),
-        // it is impossible for them to be the same photo!
+        // HARD COLOR GATE: Discard if color difference is too large
         const isColorRejected = colorDist > 14;
-
-        // TRUE MATCH: Both Structure AND Color must pass strict thresholds
-        // structDist <= structMaxDiff (default 6 = 90.6%) AND colorDist <= 8 (87.5%)
         const isMatch = !isColorRejected && (structDist <= structMaxDiff) && (colorDist <= 8);
-
-        // Close Proximity (유사 컷): Colors match well (>= 80%) and structure is somewhat close
         const hasCloseProximity = !isMatch && !isColorRejected && colorSim >= 80 && structDist <= 13;
 
         return {
@@ -1073,7 +1058,6 @@
       }
 
       async function loadDatabase() {
-        // 1. Try fetching external database.json if hosted on GitHub Pages
         try {
           const res = await fetch("database.json?cache_bust=" + Date.now());
           if (res.ok) {
@@ -1084,11 +1068,8 @@
               return;
             }
           }
-        } catch (e) {
-          // Fallback to local storage or defaults
-        }
+        } catch (e) {}
 
-        // 2. Try localStorage
         const local = localStorage.getItem("rescene_photo_db");
         if (local) {
           try {
@@ -1098,7 +1079,6 @@
           } catch (err) {}
         }
 
-        // 3. Fallback to default mock entries
         photoDatabase = [...DEFAULT_DB];
         updateDbUI();
       }
@@ -1115,7 +1095,6 @@
         updateDbUI();
       }
 
-      // DB 항목 개별 삭제 함수 (전역 연결)
       window.removeDbEntry = function (id) {
         photoDatabase = photoDatabase.filter((item) => item.id !== id);
         saveDatabaseToStorage();
@@ -1230,7 +1209,6 @@
         showToast("관리자 모드에서 로그아웃했습니다.", "log-out");
       });
 
-      // Keyboard shortcut for owner: Ctrl + Shift + A (or Cmd + Shift + A)
       window.addEventListener("keydown", (e) => {
         if (
           (e.ctrlKey || e.metaKey) &&
@@ -1246,7 +1224,6 @@
         }
       });
 
-      // Tab switching
       const navUserBtn = document.getElementById("navUserBtn");
       const navAdminBtn = document.getElementById("navAdminBtn");
 
@@ -1383,12 +1360,11 @@
           }/${total})`;
           addBtnText.textContent = `처리 중 (${i + 1}/${total})`;
 
-          // Yield control to browser rendering loop
           await new Promise((resolve) => setTimeout(resolve, 25));
 
           try {
             const img = await loadImageElement(file);
-            const hash = await computeDHash(img);
+            const hash = await computeDualHash(img, false);
             const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
             const noteText = baseNote
               ? `${baseNote} (${fileNameWithoutExt})`
@@ -1414,7 +1390,6 @@
           }
         }
 
-        // 100% 완료 상태 표시
         progressBarFill.style.width = "100%";
         progressBarFill.classList.remove("bg-indigo-600");
         progressBarFill.classList.add("bg-emerald-600");
@@ -1429,7 +1404,6 @@
         renderStagedGallery();
         document.getElementById("formNote").value = "";
 
-        // 잠시 후 프로그레스 바 숨김 및 버튼 리셋
         setTimeout(() => {
           batchProgressBarBox.classList.add("hidden");
           progressBarFill.style.width = "0%";
@@ -1445,9 +1419,9 @@
         );
       });
 
-      // ==========================================
-      // User Photo Verification (Multi-photo supported)
-      // ==========================================
+      // =======================================================
+      // User Photo Verification (Dual Mirror-Check supported)
+      // =======================================================
       const imageInput = document.getElementById("imageInput");
       const dropZone = document.getElementById("dropZone");
       const dropZoneContent = document.getElementById("dropZoneContent");
@@ -1468,17 +1442,31 @@
         return new Promise(async (resolve) => {
           try {
             const img = await loadImageElement(file);
-            const hash = await computeDualHash(img);
+
+            // Extract BOTH Normal and Mirror (Horizontally Flipped) Hashes in parallel
+            const [normalHash, flippedHash] = await Promise.all([
+              computeDualHash(img, false),
+              computeDualHash(img, true)
+            ]);
+
             let bestMatch = null;
             let bestEval = null;
             let highestSim = -1;
+            let isFlippedMatch = false;
 
             for (const entry of photoDatabase) {
-              const res = evaluateDualMatch(hash, entry.hash, selectedThreshold);
-              if (res.similarity > highestSim) {
-                highestSim = res.similarity;
+              const resNormal = evaluateDualMatch(normalHash, entry.hash, selectedThreshold);
+              const resFlipped = evaluateDualMatch(flippedHash, entry.hash, selectedThreshold);
+
+              // Select the better match candidate between original and mirror orientation
+              const isFlippedBetter = resFlipped.similarity > resNormal.similarity;
+              const chosenRes = isFlippedBetter ? resFlipped : resNormal;
+
+              if (chosenRes.similarity > highestSim) {
+                highestSim = chosenRes.similarity;
                 bestMatch = entry;
-                bestEval = res;
+                bestEval = chosenRes;
+                isFlippedMatch = isFlippedBetter && chosenRes.isMatch;
               }
             }
 
@@ -1486,8 +1474,9 @@
             resolve({
               file,
               dataUrl: previewUrl,
-              hash,
+              hash: isFlippedMatch ? flippedHash : normalHash,
               isMatch: Boolean(bestEval && bestEval.isMatch),
+              isFlipped: isFlippedMatch,
               bestMatch,
               evalResult: bestEval,
               similarity: bestEval ? bestEval.similarity : 0
@@ -1507,7 +1496,6 @@
           return;
         }
 
-        // 1. Show immediate loading feedback in dropzone for mobile users
         if (dropZoneContent && dropZoneLoading) {
           dropZoneContent.classList.add("hidden");
           dropZoneLoading.classList.remove("hidden");
@@ -1522,22 +1510,18 @@
             <i data-lucide="loader-2" class="w-7 h-7"></i>
           </div>
           <p class="text-sm font-bold text-slate-800">${imageFiles.length}장의 사진 출처를 판별하고 있습니다...</p>
-          <p class="text-xs text-slate-500 mt-1">고화질 디지털 지문(dHash) 대조 중</p>
+          <p class="text-xs text-slate-500 mt-1">128비트 지문 및 좌우 반전(미러) 동시 대조 중</p>
         </div>
       `;
         lucide.createIcons();
 
-        // Ensure smooth scroll to result container immediately so user sees something is happening
         resultContainer.scrollIntoView({ behavior: "smooth", block: "start" });
-
-        // Yield frame to paint
         await new Promise((r) => setTimeout(r, 60));
 
         const results = await Promise.all(
           imageFiles.map((f) => checkSingleImage(f))
         );
 
-        // Reset dropzone state
         if (dropZoneContent && dropZoneLoading) {
           dropZoneContent.classList.remove("hidden");
           dropZoneLoading.classList.add("hidden");
@@ -1552,20 +1536,21 @@
         let paidCount = 0;
         let publicCount = 0;
         let unknownCount = 0;
+        let flippedDetectedCount = 0;
 
         results.forEach((r) => {
           if (r.isMatch && r.bestMatch.isPaid) paidCount++;
           else if (r.isMatch && !r.bestMatch.isPaid) publicCount++;
           else unknownCount++;
+
+          if (r.isMatch && r.isFlipped) flippedDetectedCount++;
         });
 
-        // 2. Mobile Haptic feedback (Vibration)
+        // Mobile Haptic feedback
         if ("vibrate" in navigator) {
           if (paidCount > 0) {
-            // Warning vibration: 2 short pulses
             navigator.vibrate([100, 60, 120]);
           } else {
-            // Success light vibration: 1 short pulse
             navigator.vibrate(80);
           }
         }
@@ -1579,7 +1564,7 @@
             ${results.length}
           </span>
           <div>
-            <div class="font-bold text-slate-900 flex items-center gap-2">
+            <div class="font-bold text-slate-900 flex items-center gap-2 flex-wrap">
               검사 완료
               ${
                 paidCount > 0
@@ -1589,6 +1574,11 @@
               ${
                 publicCount > 0
                   ? `<span class="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full font-bold text-[11px] border border-emerald-200">공개 사진 ${publicCount}장</span>`
+                  : ""
+              }
+              ${
+                flippedDetectedCount > 0
+                  ? `<span class="text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full font-bold text-[11px] border border-indigo-200 flex items-center gap-1"><i data-lucide="flip-horizontal" class="w-3 h-3"></i>반전 짤 ${flippedDetectedCount}장 감지</span>`
                   : ""
               }
             </div>
@@ -1616,6 +1606,9 @@
           card.style.animationDelay = `${(index + 1) * 70}ms`;
 
           const ev = res.evalResult;
+          const mirrorBadgeHtml = res.isFlipped
+            ? `<span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 flex items-center gap-1 shadow-2xs"><i data-lucide="flip-horizontal" class="w-3 h-3"></i>좌우 반전(미러) 감지</span>`
+            : "";
 
           if (res.isMatch && res.bestMatch.isPaid) {
             // PAID PHOTO: Warning
@@ -1634,6 +1627,7 @@
                   <i data-lucide="shield-alert" class="w-3.5 h-3.5"></i>
                   공유 금지 (유료 콘텐츠)
                 </span>
+                ${mirrorBadgeHtml}
                 <span class="text-xs font-semibold text-rose-800">${escapeHtml(
                   res.bestMatch.platform
                 )}</span>
@@ -1641,6 +1635,7 @@
               </div>
               <p class="text-xs sm:text-sm font-bold text-rose-900 leading-snug">
                 🚨 이 사진은 외부 SNS(트위터, 인스타, 커뮤니티 등)에 배포할 수 없습니다.
+                ${res.isFlipped ? `<span class="block text-xs font-normal text-rose-700 mt-0.5">(원본 사진이 좌우로 반전된 상태입니다)</span>` : ""}
               </p>
               <div class="bg-white/90 border border-rose-100 rounded-xl p-3 text-xs text-slate-700 space-y-1 shadow-xs">
                 ${
@@ -1678,6 +1673,7 @@
                   <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
                   공유 가능 (공식 공개)
                 </span>
+                ${mirrorBadgeHtml}
                 <span class="text-xs font-semibold text-emerald-800">${escapeHtml(
                   res.bestMatch.platform
                 )}</span>
@@ -1755,7 +1751,6 @@
 
         lucide.createIcons();
 
-        // 3. Smooth Auto-Scroll directly to the result summary card
         setTimeout(() => {
           resultContainer.scrollIntoView({
             behavior: "smooth",
@@ -1763,7 +1758,6 @@
           });
         }, 50);
 
-        // 4. Show Instant Toast Notification
         if (paidCount > 0) {
           showToast(
             `🚨 유료 사진 ${paidCount}건이 발견되었습니다. 공유에 주의하세요!`,
@@ -1807,7 +1801,6 @@
         }
       });
 
-      // Drag and Drop highlighting helper
       [dropZone, adminDropZone].forEach((zone) => {
         if (!zone) return;
         ["dragenter", "dragover"].forEach((eventName) => {
@@ -1893,7 +1886,6 @@
 
       // Clear DB
       document.getElementById("clearDbBtn").addEventListener("click", () => {
-        // In-app modal replacement instead of window.confirm
         photoDatabase = [];
         saveDatabaseToStorage();
         showToast("데이터베이스가 초기화되었습니다.", "trash");
@@ -1918,7 +1910,6 @@
         }, 3000);
       }
 
-      // Initialize on load
       window.addEventListener("DOMContentLoaded", () => {
         loadDatabase();
         syncAdminAuthState();
