@@ -266,9 +266,7 @@
               공개 공식 SNS (공유 가능)
             </div>
             <p class="text-xs text-slate-600 leading-relaxed">
-              리센느 공식 X(@resceneofficial), 공식 인스타그램, 유튜브 커뮤니티,
-              틱톡 등 공개 계정에 정식 포스팅된 사진은 출처를 명시하고 자유롭게
-              팬 활동 및 RT/공유가 가능합니다.
+              리센느 공식 X(@RESCENEofficial), 멤버 X(@RESCENE_twt), 공식 인스타그램 등 공개 계정에 정식 포스팅된 사진은 출처를 명시하고 자유롭게 팬 활동 및 RT/공유가 가능합니다.
             </p>
           </div>
         </div>
@@ -287,8 +285,7 @@
                 플러스챗 사진 데이터베이스 관리기
               </h2>
               <p class="text-xs text-slate-500 mt-1">
-                관리자님이 보유하신 플러스챗/공식 사진들의 해시(Dual Hybrid
-                Hash)를 추출해 DB에 추가하고,
+                관리자님이 보유하신 사진들의 지문(Dual Hybrid Hash)을 추출해 DB에 추가하고,
                 <code
                   class="bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-mono"
                   >database.json</code
@@ -339,11 +336,9 @@
                   <option value="플러스챗 (Plus Chat)" selected>
                     플러스챗 (Plus Chat)
                   </option>
-                  <option value="공식 X (Twitter)">공식 X (Twitter)</option>
+                  <option value="공식 X (@RESCENEofficial)">공식 X (@RESCENEofficial)</option>
+                  <option value="멤버 X (@RESCENE_twt)">멤버 X (@RESCENE_twt)</option>
                   <option value="공식 Instagram">공식 Instagram</option>
-                  <option value="공식 Weverse (무료)">
-                    공식 Weverse (무료)
-                  </option>
                   <option value="기타 유료 멤버십">기타 유료 멤버십</option>
                 </select>
               </div>
@@ -603,7 +598,7 @@
               업로드합니다.
             </li>
             <li>
-              플러스챗 사진들을 [DB 관리도구]에서 추가하거나 로컬에서
+              사진들을 [DB 관리도구]에서 추가하거나 로컬에서
               <code class="text-emerald-300">build_database.py</code>로 생성한 뒤,
               <code class="text-emerald-300">database.json</code> 파일로
               저장합니다.
@@ -766,7 +761,7 @@
         });
       }
 
-      // Default built-in mock database (Pre-loaded samples for demonstration)
+      // Default built-in mock database (Updated with new platform names)
       const DEFAULT_DB = [
         {
           id: "demo-1",
@@ -780,27 +775,27 @@
         {
           id: "demo-2",
           hash: "8181c3c3e7e7fffff0e0e0a0a0e0e0f0",
-          platform: "플러스챗 (Plus Chat)",
-          isPaid: true,
-          member: "원이",
+          platform: "공식 X (@RESCENEofficial)",
+          isPaid: false,
+          member: "전체 / 단체",
           date: "2024-05-02",
-          note: "플챗 멤버십 라이브 캡처본",
+          note: "공식 트위터 단체 포토 (자유 공유 가능)",
         },
         {
           id: "demo-3",
           hash: "00183c7effc381001122334455667788",
-          platform: "공식 X (Twitter)",
+          platform: "멤버 X (@RESCENE_twt)",
           isPaid: false,
-          member: "전체/단체",
+          member: "원이",
           date: "2024-03-26",
-          note: "쇼케이스 비하인드 공식 트윗 사진 (자유 공유 가능)",
+          note: "멤버 트윗 셀카 사진 (자유 공유 가능)",
         },
       ];
 
       // Local state
       let photoDatabase = [];
-      let selectedThreshold = 6; // 6-bit threshold: ~90.6% 이상 일치해야 동일 사진으로 판정
-      let stagedAdminFiles = []; // Staged files for batch registration
+      let selectedThreshold = 6;
+      let stagedAdminFiles = [];
 
       // Admin password
       const ADMIN_PASSCODE = "ilivyou";
@@ -876,13 +871,10 @@
 
       /**
        * Computes 128-bit Dual Hybrid Hash:
-       * @param {HTMLImageElement} imageElement
-       * @param {boolean} isFlipped - If true, inverts horizontally (for mirror mode detection)
        */
       function computeDualHash(imageElement, isFlipped = false) {
         return new Promise((resolve, reject) => {
           try {
-            // Step 1: Standardized 32x32 rendering for DCT structure
             const canvas32 = document.createElement("canvas");
             canvas32.width = 32;
             canvas32.height = 32;
@@ -911,7 +903,6 @@
               }
             }
 
-            // Step 2: 2D DCT (8x8 low-frequency coefficients)
             const dctCoeffs = [];
             for (let u = 0; u < 8; u++) {
               for (let v = 0; v < 8; v++) {
@@ -940,7 +931,7 @@
               structHex += parseInt(structBinary.substr(i, 4), 2).toString(16);
             }
 
-            // Step 3: Spatial Color Signature (16x16 -> 4x4 regions)
+            // Spatial Color Signature (16x16 -> 4x4 regions)
             const colorCanvas = document.createElement("canvas");
             colorCanvas.width = 16;
             colorCanvas.height = 16;
@@ -1001,9 +992,6 @@
         });
       }
 
-      // Backward compatible alias
-      const computeDHash = (img) => computeDualHash(img, false);
-
       function getHammingDistance(hash1, hash2) {
         if (!hash1 || !hash2 || hash1.length !== hash2.length) return 64;
         let dist = 0;
@@ -1040,7 +1028,6 @@
         const colorSim = (1 - colorDist / 64) * 100;
         const overallSim = Math.round(structSim * 0.5 + colorSim * 0.5);
 
-        // HARD COLOR GATE: Discard if color difference is too large
         const isColorRejected = colorDist > 14;
         const isMatch = !isColorRejected && (structDist <= structMaxDiff) && (colorDist <= 8);
         const hasCloseProximity = !isMatch && !isColorRejected && colorSim >= 80 && structDist <= 13;
@@ -1230,9 +1217,7 @@
       navUserBtn.addEventListener("click", switchToUserView);
       navAdminBtn.addEventListener("click", switchToAdminView);
 
-      // ==========================================
       // Multi-File Staging & Batch Registration
-      // ==========================================
       const formImageFile = document.getElementById("formImageFile");
       const adminDropZone = document.getElementById("adminDropZone");
       const stagedPhotosBox = document.getElementById("stagedPhotosBox");
@@ -1324,7 +1309,6 @@
         renderStagedGallery();
       });
 
-      // Batch Registration Process
       addDbEntryBtn.addEventListener("click", async () => {
         if (stagedAdminFiles.length === 0) {
           showToast(
@@ -1419,9 +1403,7 @@
         );
       });
 
-      // =======================================================
-      // User Photo Verification (Dual Mirror-Check supported)
-      // =======================================================
+      // User Photo Verification
       const imageInput = document.getElementById("imageInput");
       const dropZone = document.getElementById("dropZone");
       const dropZoneContent = document.getElementById("dropZoneContent");
@@ -1443,7 +1425,6 @@
           try {
             const img = await loadImageElement(file);
 
-            // Extract BOTH Normal and Mirror (Horizontally Flipped) Hashes in parallel
             const [normalHash, flippedHash] = await Promise.all([
               computeDualHash(img, false),
               computeDualHash(img, true)
@@ -1458,7 +1439,6 @@
               const resNormal = evaluateDualMatch(normalHash, entry.hash, selectedThreshold);
               const resFlipped = evaluateDualMatch(flippedHash, entry.hash, selectedThreshold);
 
-              // Select the better match candidate between original and mirror orientation
               const isFlippedBetter = resFlipped.similarity > resNormal.similarity;
               const chosenRes = isFlippedBetter ? resFlipped : resNormal;
 
@@ -1546,7 +1526,6 @@
           if (r.isMatch && r.isFlipped) flippedDetectedCount++;
         });
 
-        // Mobile Haptic feedback
         if ("vibrate" in navigator) {
           if (paidCount > 0) {
             navigator.vibrate([100, 60, 120]);
@@ -1578,7 +1557,7 @@
               }
               ${
                 flippedDetectedCount > 0
-                  ? `<span class="text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full font-bold text-[11px] border border-indigo-200 flex items-center gap-1"><i data-lucide="flip-horizontal" class="w-3 h-3"></i>반전 짤 ${flippedDetectedCount}장 감지</span>`
+                  ? `<span class="text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full font-bold text-[11px] border border-indigo-200 flex items-center gap-1"><i data-lucide="flip-horizontal" class="w-3 3.5"></i>반전 짤 ${flippedDetectedCount}장 감지</span>`
                   : ""
               }
             </div>
@@ -1611,7 +1590,6 @@
             : "";
 
           if (res.isMatch && res.bestMatch.isPaid) {
-            // PAID PHOTO: Warning
             card.classList.add(
               "border-rose-300",
               "bg-rose-50/30",
@@ -1661,7 +1639,6 @@
             </div>
           `;
           } else if (res.isMatch && !res.bestMatch.isPaid) {
-            // FREE/PUBLIC PHOTO: Allowed
             card.classList.add("border-emerald-300", "bg-emerald-50/20");
             card.innerHTML = `
             <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border-2 border-emerald-300 shadow-sm mx-auto sm:mx-0">
@@ -1706,7 +1683,6 @@
             </div>
           `;
           } else {
-            // UNKNOWN / NOT FOUND
             const hasProximity = ev && ev.hasCloseProximity;
 
             card.innerHTML = `
@@ -1724,7 +1700,7 @@
                 )}</span>
               </div>
               <p class="text-xs text-slate-600 leading-relaxed">
-                현재 등록된 데이터베이스에서 일치하는 사진을 찾지 못했습니다. 직촬이거나 버블 사진일 수 있으니 공유 전 한 번 더 출처를 확인해 주세요.
+                현재 등록된 데이터베이스에서 일치하는 사진을 찾지 못했습니다. 공식 계정 미디어이거나 아직 등록되지 않은 플챗 미디어일 수 있으니 공유 전 한 번 더 출처를 확인해 주세요.
               </p>
               ${
                 hasProximity
@@ -1736,7 +1712,7 @@
                       res.bestMatch.member ? res.bestMatch.member + " / " : ""
                     )}${escapeHtml(
                       res.bestMatch.platform
-                    )})이 등록되어 있습니다. 동일 사진은 아니지만 연속 촬영된 유사 사진일 가능성이 있으니 출처를 다시 확인해 보세요.
+                    )})이 등록되어 있습니다. 동일 사진은 아니지만 연속 촬영된 유사 셀카일 가능성이 있으니 출처를 다시 확인해 보세요.
                   </div>
                 </div>
               `
@@ -1781,7 +1757,6 @@
         imageInput.value = "";
       });
 
-      // Paste event support (Ctrl + V)
       window.addEventListener("paste", (e) => {
         const items = (e.clipboardData || e.originalEvent.clipboardData).items;
         const pastedFiles = [];
@@ -1839,7 +1814,6 @@
         }
       });
 
-      // Export Database as JSON
       document.getElementById("exportDbBtn").addEventListener("click", () => {
         const jsonStr = JSON.stringify(photoDatabase, null, 2);
         const blob = new Blob([jsonStr], { type: "application/json" });
@@ -1856,7 +1830,6 @@
         showToast("database.json 파일이 다운로드되었습니다.", "download");
       });
 
-      // Import Database from JSON
       document
         .getElementById("importDbInput")
         .addEventListener("change", (e) => {
@@ -1884,14 +1857,12 @@
           reader.readAsText(file);
         });
 
-      // Clear DB
       document.getElementById("clearDbBtn").addEventListener("click", () => {
         photoDatabase = [];
         saveDatabaseToStorage();
         showToast("데이터베이스가 초기화되었습니다.", "trash");
       });
 
-      // Toast Notification helper
       function showToast(message, iconName = "info") {
         const toast = document.getElementById("toast");
         const toastMsg = document.getElementById("toastMsg");

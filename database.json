@@ -61657,5 +61657,59 @@
     "member": "제나 (Zena)",
     "date": "2026-09-10",
     "note": "[2026-09-10] zena_artist_1"
+  },
+  {
+    "id": "rc_1789193431315_2",
+    "hash": "d313493e3cc9ccc94754455c5ddd44c4",
+    "platform": "공식 X (@RESCENEofficial)",
+    "isPaid": false,
+    "member": "",
+    "date": "",
+    "note": "[26-09-11] 2098067232819712088_p0"
+  },
+  {
+    "id": "rc_1789193431357_3",
+    "hash": "d06c6b998c96646faaba25d223dc4ddc",
+    "platform": "멤버 X (@RESCENE_twt)",
+    "isPaid": false,
+    "member": "",
+    "date": "",
+    "note": "[26-09-07] 2096853276935544999_p0"
+  },
+  {
+    "id": "rc_1789193431384_4",
+    "hash": "b3895c9bc982332f4884498229988998",
+    "platform": "멤버 X (@RESCENE_twt)",
+    "isPaid": false,
+    "member": "",
+    "date": "",
+    "note": "[26-09-07] 2096853276935544999_p1"
+  },
+  {
+    "id": "rc_1789193431413_5",
+    "hash": "94376a899c7635c6aaabaa9aaddaabba",
+    "platform": "멤버 X (@RESCENE_twt)",
+    "isPaid": false,
+    "member": "",
+    "date": "",
+    "note": "[26-09-07] 2096853276935544999_p2"
+  },
+  {
+    "id": "rc_1789193431439_6",
+    "hash": "9d8c7a4cc7b03ca5cccc4ddc5dd54554",
+    "platform": "멤버 X (@RESCENE_twt)",
+    "isPaid": false,
+    "member": "",
+    "date": "",
+    "note": "[26-09-07] 2096853276935544999_p3"
+  },
+  {
+    "id": "rc_1789194025654_1",
+    "hash": "9ae3619c261ddb432a2a3bba3ddd2c44",
+    "platform": "플러스챗 (Plus Chat)",
+    "isPaid": false,
+    "member": "메이 (May)",
+    "date": "2026-09-11",
+    "note": "[2026-09-11] may_artist_1"
   }
 ]
