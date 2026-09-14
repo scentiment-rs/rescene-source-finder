@@ -464,11 +464,12 @@
 
             const globalLuma = totalLumaSum / 16;
             let colorBinary = "";
+            const EPS = 2.0;
             for (let i = 0; i < 16; i++) {
               const reg = regions[i];
-              colorBinary += reg.r > reg.g ? "1" : "0";
-              colorBinary += reg.g > reg.b ? "1" : "0";
-              colorBinary += reg.b > reg.r ? "1" : "0";
+              colorBinary += (reg.r - reg.g) > EPS ? "1" : "0";
+              colorBinary += (reg.g - reg.b) > EPS ? "1" : "0";
+              colorBinary += (reg.b - reg.r) > EPS ? "1" : "0";
               colorBinary += reg.luma >= globalLuma ? "1" : "0";
             }
 
@@ -507,6 +508,8 @@
             isMatch: dist <= structMaxDiff,
             structDist: dist,
             colorDist: 0,
+            structSim: sim,
+            colorSim: 100,
             similarity: sim,
             isColorRejected: false,
             hasCloseProximity: dist > structMaxDiff && dist <= 11
@@ -516,22 +519,27 @@
         const structDist = getHammingDistance(inputHash.substr(0, 16), dbHash.substr(0, 16));
         const colorDist = getHammingDistance(inputHash.substr(16, 16), dbHash.substr(16, 16));
 
-        const structSim = (1 - structDist / 64) * 100;
-        const colorSim = (1 - colorDist / 64) * 100;
-        const overallSim = Math.round(structSim * 0.5 + colorSim * 0.5);
+        const structSim = Math.round((1 - structDist / 64) * 100);
+        const colorSim = Math.round((1 - colorDist / 64) * 100);
 
-        const isColorRejected = colorDist > 14;
-        const isMatch = !isColorRejected && (structDist <= structMaxDiff) && (colorDist <= 8);
-        const hasCloseProximity = !isMatch && !isColorRejected && colorSim >= 80 && structDist <= 13;
+        // 구조(DCT)가 일치 기준(structMaxDiff 이하)을 충족하면 무채색 노이즈에 관계없이 일치 판정!
+        const isMatch = structDist <= structMaxDiff;
+
+        // 전체 유사도 계산 (구조 가중치 70%, 색상 가중치 30%)
+        const overallSim = isMatch
+          ? Math.max(85, Math.round(structSim * 0.7 + colorSim * 0.3))
+          : Math.round(structSim * 0.7 + colorSim * 0.3);
+
+        const hasCloseProximity = !isMatch && (structDist <= 13 || overallSim >= 75);
 
         return {
           isMatch,
           structDist,
           colorDist,
-          structSim: Math.round(structSim),
-          colorSim: Math.round(colorSim),
+          structSim,
+          colorSim,
           similarity: overallSim,
-          isColorRejected,
+          isColorRejected: false,
           hasCloseProximity
         };
       }
@@ -846,21 +854,22 @@
                 <span class="text-xs text-slate-400 max-w-[140px] sm:max-w-none truncate">파일: ${escapeHtml(
                   res.file.name
                 )}</span>
+                ${ev && ev.similarity > 0 ? `<span class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-slate-100 text-slate-500">최고 유사도: ${ev.similarity}% (구조 ${ev.structSim}% · 색상 ${ev.colorSim}%)</span>` : ""}
               </div>
               <p class="text-xs text-slate-600 leading-relaxed">
                 현재 등록된 데이터베이스에서 일치하는 사진을 찾지 못했습니다. 공식 계정 미디어이거나 아직 등록되지 않은 플챗 미디어일 수 있으니 공유 전 한 번 더 출처를 확인해 주세요.
               </p>
               ${
-                hasProximity
+                hasProximity && res.bestMatch
                   ? `
                 <div class="bg-amber-50 border border-amber-200/80 rounded-xl p-2.5 text-[11px] text-amber-900 flex items-start gap-2 mt-1.5">
                   <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5"></i>
                   <div>
-                    <strong>유사 컷 주의 (색상 ${ev.colorSim}% · 구조 ${ev.structSim}%):</strong> DB에 색감과 착장이 매우 유사한 사진(${escapeHtml(
-                      res.bestMatch.member ? res.bestMatch.member + " / " : ""
+                    <strong>유사 컷 감지 (구조 ${ev.structSim}% · 색상 ${ev.colorSim}%):</strong> DB의 <strong>[${escapeHtml(
+                      res.bestMatch.member ? res.bestMatch.member + " - " : ""
                     )}${escapeHtml(
-                      res.bestMatch.platform
-                    )})이 등록되어 있습니다. 동일 사진은 아니지만 연속 촬영된 유사 셀카일 가능성이 있으니 출처를 다시 확인해 보세요.
+                      res.bestMatch.note || res.bestMatch.platform
+                    )}]</strong>과 유사합니다. (각도·크롭 차이이거나 연속 촬영된 셀카일 수 있습니다)
                   </div>
                 </div>
               `
