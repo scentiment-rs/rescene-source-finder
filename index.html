@@ -548,10 +548,27 @@
         try {
           const res = await fetch("database.json?cache_bust=" + Date.now());
           if (res.ok) {
-            const json = await res.json();
-            if (Array.isArray(json) && json.length > 0) {
-              photoDatabase = json;
-              return;
+            const raw = await res.json();
+            if (raw) {
+              // 방법 A: v2 튜플 압축 포맷 (약 80% 용량 절감) 자동 압축 해제
+              if (raw.data && Array.isArray(raw.data)) {
+                const platforms = raw.platforms || [];
+                const members = raw.members || [];
+                photoDatabase = raw.data.map((row, idx) => ({
+                  id: `rc_${idx}`,
+                  hash: row[0],
+                  platform: platforms[row[1]] || "",
+                  isPaid: Boolean(row[2]),
+                  member: members[row[3]] || "",
+                  date: row[4] || "",
+                  note: row[5] || ""
+                }));
+                return;
+              } else if (Array.isArray(raw) && raw.length > 0) {
+                // 기존 v1 레거시 JSON 포맷도 100% 정상 호환
+                photoDatabase = raw;
+                return;
+              }
             }
           }
         } catch (e) {
